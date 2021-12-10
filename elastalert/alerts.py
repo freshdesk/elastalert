@@ -1803,7 +1803,6 @@ class AlertmanagerAlerter(Alerter):
         self.alertmanager_basic_auth_login = self.rule.get('alertmanager_basic_auth_login', None)
         self.alertmanager_basic_auth_password = self.rule.get('alertmanager_basic_auth_password', None)
         self.tenant = self.rule.get('tenant', "haystack")
-        self.endpoint = self.rule.get('endpoint')
 
     @staticmethod
     def _json_or_string(obj):
@@ -1831,10 +1830,10 @@ class AlertmanagerAlerter(Alerter):
             'annotations': self.annotations,
             'labels': self.labels
         }
-
+        
         for host in self.hosts:
             try:
-                url = self.endpoint
+                url = host
 
                 if self.ca_certs:
                     verify = self.ca_certs

@@ -1019,6 +1019,35 @@ class BaseAggregationRule(RuleType):
     def check_matches(self, timestamp, query_key, aggregation_data):
         raise NotImplementedError()
 
+class ErrorRateRule(BaseAggregationRule):
+    """ A rule that determines error rate with sampling rate"""
+    required_options = frozenset(['sampling', 'threshold'])
+    def __init__(self, *args):
+        super(ErrorRateRule, self).__init__(*args)
+        self.ts_field = self.rules.get('timestamp_field', '@timestamp')
+        self.rules['metric_agg_key'] = "1"
+        self.rules['metric_agg_type'] = "count"
+        self.metric_key = self.rules['metric_agg_key'] + '_' + self.rules['metric_agg_type']
+
+        self.rules['aggregation_query_element'] = self.generate_aggregation_query()
+
+    def get_match_str(self, match):
+        message = 'Threshold violation, error rate is %s' % (match['error_rate'])
+        return message
+        
+    def generate_aggregation_query(self):
+        return {self.metric_key: {self.rules['metric_agg_type']: {'field': self.rules['metric_agg_key']}}}
+
+    def calculate_err_rate(self,payload):
+        for timestamp, payload_data in payload.iteritems():
+            if int(payload_data['total_count']) > 0:
+                rate = int(payload_data['error_count'])/int(payload_data['total_count'])
+                rate = (rate*100)/self.rules['sampling']
+                rate = rate*100
+                if 'threshold' in self.rules and rate > self.rules['threshold']:
+                    match = {self.rules['timestamp_field']: timestamp, 'error_rate': rate}
+                    self.add_match(match)
+
 
 class MetricAggregationRule(BaseAggregationRule):
     """ A rule that matches when there is a low number of events given a timeframe. """

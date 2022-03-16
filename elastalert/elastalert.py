@@ -32,6 +32,7 @@ from elasticsearch.exceptions import ElasticsearchException
 from elasticsearch.exceptions import TransportError
 from enhancements import DropMatchException
 from ruletypes import FlatlineRule
+from ruletypes import ErrorRateRule
 from util import add_raw_postfix
 from util import cronite_datetime_to_timestamp
 from util import dt_to_ts
@@ -106,6 +107,7 @@ class ElastAlerter():
 
     def __init__(self, args):
         self.parse_args(args)
+        # pdb.set_trace()
         self.debug = self.args.debug
         self.verbose = self.args.verbose
 
@@ -632,6 +634,42 @@ class ElastAlerter():
         self.num_hits += res['rows'] 
         return {endtime: payload}
 
+    def get_error_rate(self, rule, starttime, endtime):
+        agg_key = rule['metric_agg_type']+"()"
+        data = {
+                    "selects":[],
+                    "start_time":dt_to_ts(starttime),
+                    "end_time":dt_to_ts(endtime),
+                    "freshquery": rule['filter'][0]['query_string']['query']+" AND "+rule['error_condition'],
+                    "group_bys":[],
+                    "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
+                    "limit":"500",
+                    "aggregations":[{"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}]
+                } 
+        res_err = requests.post('http://localhost:8080/v2/sherlock/traces/visualize', json=data)
+        res_err = json.loads(res_err.content)
+        if res_err['data'][0][agg_key] is None:
+            return {}
+        payload = {'error_count': res_err["data"][0][agg_key]}
+
+        data = {
+                    "selects":[],
+                    "start_time":dt_to_ts(starttime),
+                    "end_time":dt_to_ts(endtime),
+                    "freshquery": rule['filter'][0]['query_string']['query'],
+                    "group_bys":[],
+                    "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
+                    "limit":"500",
+                    "aggregations":[{"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}]
+                } 
+        res_total = requests.post('http://localhost:8080/v2/sherlock/traces/visualize', json=data)
+        res_total = json.loads(res_total.content)
+
+        payload.update({'total_count': res_total["data"][0][agg_key]})
+
+        self.num_hits += res_total['rows'] 
+        return {endtime: payload}
+
     def remove_duplicate_events(self, data, rule):
         new_events = []
         for event in data:
@@ -676,6 +714,8 @@ class ElastAlerter():
             data = self.get_hits_count(rule, start, end, index)
         elif rule.get('use_terms_query'):
             data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
+        elif isinstance(rule_inst, ErrorRateRule):
+            data = self.get_error_rate(rule, start, end)
         elif rule.get('aggregation_query_element'):
             data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
         else:
@@ -693,6 +733,9 @@ class ElastAlerter():
                 rule_inst.add_count_data(data)
             elif rule.get('use_terms_query'):
                 rule_inst.add_terms_data(data)
+            elif isinstance(rule_inst, ErrorRateRule):
+                # pdb.set_trace()
+                rule_inst.calculate_err_rate(data)
             elif rule.get('aggregation_query_element'):
                 rule_inst.add_aggregation_data(data)
             else:

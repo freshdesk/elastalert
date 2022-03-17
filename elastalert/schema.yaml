@@ -135,6 +135,7 @@ oneOf:
       sampling: {type: integer}
       threshold: {type: integer}
       error_condition: {type: string}
+      unique_column: {type: string}
       
 properties:
 

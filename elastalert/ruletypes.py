@@ -1021,13 +1021,12 @@ class BaseAggregationRule(RuleType):
 
 class ErrorRateRule(BaseAggregationRule):
     """ A rule that determines error rate with sampling rate"""
-    required_options = frozenset(['sampling', 'threshold'])
+    required_options = frozenset(['sampling', 'threshold', 'unique_column'])
     def __init__(self, *args):
         super(ErrorRateRule, self).__init__(*args)
         self.ts_field = self.rules.get('timestamp_field', '@timestamp')
-        self.rules['metric_agg_key'] = "1"
-        self.rules['metric_agg_type'] = "count"
-        self.metric_key = self.rules['metric_agg_key'] + '_' + self.rules['metric_agg_type']
+        self.rules['total_agg_key'] = self.rules['unique_column']
+        self.rules['total_agg_type'] = "uniq"
 
     def get_match_str(self, match):
         message = 'Threshold violation, error rate is %s' % (match['error_rate'])

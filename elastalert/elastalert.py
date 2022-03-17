@@ -542,7 +542,8 @@ class ElastAlerter():
     def get_hits_aggregation(self, rule, starttime, endtime, index, query_key, term_size=None):
         agg_key = rule['metric_agg_type']+"("+rule['metric_agg_key']+")"
         query = rule['filter'][0]['query_string']['query']
-        data, count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
+        aggregation = {"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}
+        data, count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
         
         if data is None:
             return {}
@@ -552,15 +553,20 @@ class ElastAlerter():
         return {endtime: payload}
 
     def get_error_rate(self, rule, starttime, endtime):
-        agg_key = rule['metric_agg_type']+"()"
+        agg_key = rule['total_agg_type']+"("+rule['total_agg_key']+")"
         query = rule['filter'][0]['query_string']['query']
-        total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
+        aggregation = {"function": rule['total_agg_type'].upper(), "field": rule['total_agg_key']}
+        
+        total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
         if total_data is None:
             return {}
         
+        agg_key = "count()"
         query = query+" AND "+rule['error_condition']
-        error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
+        aggregation = {"function": "COUNT", "field": "1"}
+
+        error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
         if error_data is None:
             return {}
@@ -570,7 +576,7 @@ class ElastAlerter():
 
         return {endtime: payload}
 
-    def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery):
+    def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery,aggregation):
         data = {
                     "selects":[],
                     "start_time":dt_to_ts(starttime),
@@ -579,7 +585,7 @@ class ElastAlerter():
                     "group_bys":[],
                     "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
                     "limit":"500",
-                    "aggregations":[{"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}]
+                    "aggregations":[aggregation]
                 }
         try:
             res = requests.post(self.query_endpoint, json=data)

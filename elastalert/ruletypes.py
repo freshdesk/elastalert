@@ -1026,6 +1026,7 @@ class ErrorRateRule(BaseAggregationRule):
         super(ErrorRateRule, self).__init__(*args)
         self.ts_field = self.rules.get('timestamp_field', '@timestamp')
         self.rules['total_agg_key'] = self.rules['unique_column']
+        # hardcoding uniq aggregation for total count
         self.rules['total_agg_type'] = "uniq"
 
     def get_match_str(self, match):

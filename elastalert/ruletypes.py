@@ -1029,15 +1029,10 @@ class ErrorRateRule(BaseAggregationRule):
         self.rules['metric_agg_type'] = "count"
         self.metric_key = self.rules['metric_agg_key'] + '_' + self.rules['metric_agg_type']
 
-        self.rules['aggregation_query_element'] = self.generate_aggregation_query()
-
     def get_match_str(self, match):
         message = 'Threshold violation, error rate is %s' % (match['error_rate'])
         return message
         
-    def generate_aggregation_query(self):
-        return {self.metric_key: {self.rules['metric_agg_type']: {'field': self.rules['metric_agg_key']}}}
-
     def calculate_err_rate(self,payload):
         for timestamp, payload_data in payload.iteritems():
             if int(payload_data['total_count']) > 0:

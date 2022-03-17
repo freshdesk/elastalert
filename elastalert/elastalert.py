@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import pdb
 import argparse
 import copy
 import datetime
@@ -313,21 +312,6 @@ class ElastAlerter():
             return '1969-12-30T00:00:00Z'
         return res['hits']['hits'][0][timestamp_field]
 
-    # @staticmethod
-    # def process_ch_hits(rule, hits):
-    #     processed_hits = []      
-    #     for hit in hits:
-    #         temp = {}
-    #         for key, value in hit.items():
-    #             temp[key] = value
-
-    #         ts = hit['timestamp']
-    #         temp['timestamp'] = rule['ts_to_dt'](ts)
-    #         temp['_type'] = 'doc'
-    #         processed_hits.append(temp)
-
-    #     return processed_hits
-
     @staticmethod
     def process_hits(rule, hits):
         """ Update the _source field for each hit received from ES based on the rule configuration.
@@ -403,30 +387,15 @@ class ElastAlerter():
             if scroll:
                 res = self.current_es.scroll(scroll_id=rule['scroll_id'], scroll=scroll_keepalive)
             else:
-                # res = self.current_es.search(
-                #     scroll=scroll_keepalive,
-                #     index=index,
-                #     size=rule.get('max_query_size', self.max_query_size),
-                #     body=query,
-                #     ignore_unavailable=True,
-                #     **extra_args
-                # )
-                # self.total_hits = int(res['hits']['total'])
-
-                # data = {"selects":["timestamp","test_field"],"start_time":1635442598471,"end_time":1646069889001,"freshquery":"( test_field: test3 )","group_bys":[],"sort_orders":[{"sort_by":"timestamp","sort_direction":"desc"}],"limit":"500","aggregations":[]}
-                # data = {
-                #     "selects":rule['include'],
-                #     "start_time":dt_to_ts(starttime),
-                #     "end_time":dt_to_ts(endtime),
-                #     "freshquery": rule['filter'][0]['query_string']['query'],
-                #     "group_bys":[],
-                #     "sort_orders":[{"sort_by":"timestamp","sort_direction":"desc"}],
-                #     "limit":"500",
-                #     "aggregations":[]
-                # } 
-                # res = requests.post('http://localhost:8080/v2/sherlock/traces/visualize', json=data)
-                # res = json.loads(res.content)
-
+                res = self.current_es.search(
+                    scroll=scroll_keepalive,
+                    index=index,
+                    size=rule.get('max_query_size', self.max_query_size),
+                    body=query,
+                    ignore_unavailable=True,
+                    **extra_args
+                )
+                self.total_hits = int(res['hits']['total'])
 
             if len(res.get('_shards', {}).get('failures', [])) > 0:
                 errs = [e['reason']['reason'] for e in res['_shards']['failures'] if 'Failed to parse' in e['reason']['reason']]
@@ -456,18 +425,13 @@ class ElastAlerter():
             rule['scroll_id'] = res['_scroll_id']
         else:
             elastalert_logger.info(status_log)
-        hits = self.process_hits(rule, hits)
-        
 
-        # hits = res['data']
-        # self.total_hits = len(res['data'])
-        # self.num_hits += len(hits)
-        # hits = self.process_ch_hits(rule, hits)
-        
-        # # Record doc_type for use in get_top_counts
-        # if 'doc_type' not in rule and len(hits):
-        #     rule['doc_type'] = hits[0]['_type']
-        # return hits
+        hits = self.process_hits(rule, hits)
+
+        # Record doc_type for use in get_top_counts
+        if 'doc_type' not in rule and len(hits):
+            rule['doc_type'] = hits[0]['_type']
+        return hits
 
     def get_hits_count(self, rule, starttime, endtime, index):
         """ Query Elasticsearch for the count of results and returns a list of timestamps
@@ -576,44 +540,6 @@ class ElastAlerter():
         return {endtime: buckets}
 
     def get_hits_aggregation(self, rule, starttime, endtime, index, query_key, term_size=None):
-        # rule_filter = copy.copy(rule['filter'])
-        # base_query = self.get_query(
-        #     rule_filter,
-        #     starttime,
-        #     endtime,
-        #     timestamp_field=rule['timestamp_field'],
-        #     sort=False,
-        #     to_ts_func=rule['dt_to_ts'],
-        #     five=rule['five']
-        # )
-        # if term_size is None:
-        #     term_size = rule.get('terms_size', 50)
-        # query = self.get_aggregation_query(base_query, rule, query_key, term_size, rule['timestamp_field'])
-        # try:
-        #     if not rule['five']:
-        #         res = self.current_es.search(
-        #             index=index,
-        #             doc_type=rule.get('doc_type'),
-        #             body=query,
-        #             search_type='count',
-        #             ignore_unavailable=True
-        #         )
-        #     else:
-        #         res = self.current_es.search(index=index, doc_type=rule.get('doc_type'), body=query, size=0, ignore_unavailable=True)
-        # except ElasticsearchException as e:
-        #     if len(str(e)) > 1024:
-        #         e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
-        #     self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
-        #     return None
-        # if 'aggregations' not in res:
-        #     return {}
-        # if not rule['five']:
-        #     payload = res['aggregations']['filtered']
-        # else:
-        #     payload = res['aggregations']
-        # self.num_hits += res['hits']['total']
-        # return {endtime: payload}
-
         agg_key = rule['metric_agg_type']+"("+rule['metric_agg_key']+")"
         query = rule['filter'][0]['query_string']['query']
         data, count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
@@ -706,7 +632,7 @@ class ElastAlerter():
             data = self.get_hits(rule, start, end, index, scroll)
             if data:
                 old_len = len(data)
-                # data = self.remove_duplicate_events(data, rule)
+                data = self.remove_duplicate_events(data, rule)
                 self.num_dupes += old_len - len(data)
 
         # There was an exception while querying
@@ -800,7 +726,6 @@ class ElastAlerter():
                     rule['starttime'] = rule['previous_endtime']
                 self.adjust_start_time_for_overlapping_agg_query(rule)
             else:
-                elastalert_logger.info("set_starttime 6")
                 rule['starttime'] = buffer_delta
 
             self.adjust_start_time_for_interval_sync(rule, endtime)
@@ -916,7 +841,7 @@ class ElastAlerter():
         :return: The number of matches that the rule produced.
         """
         run_start = time.time()
-        
+
         self.current_es = elasticsearch_client(rule)
         self.current_es_addr = (rule['es_host'], rule['es_port'])
 
@@ -931,7 +856,6 @@ class ElastAlerter():
         else:
             self.set_starttime(rule, endtime)
 
-        
         rule['original_starttime'] = rule['starttime']
 
         # Don't run if starttime was set to the future
@@ -1026,7 +950,6 @@ class ElastAlerter():
                 'time_taken': time_taken}
         self.writeback('elastalert_status', body)
 
-        
         return num_matches
 
     def init_rule(self, new_rule, new=True):
@@ -1189,6 +1112,7 @@ class ElastAlerter():
                     exit(1)
         self.wait_until_responsive(timeout=self.args.timeout)
         self.running = True
+        elastalert_logger.info("Starting up")
         while self.running:
             next_run = datetime.datetime.utcnow() + self.run_every
 

@@ -556,8 +556,14 @@ class ElastAlerter():
         query = rule['filter'][0]['query_string']['query']
         total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
 
+        if total_data is None:
+            return {}
+        
         query = query+" AND "+rule['error_condition']
         error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
+
+        if error_data is None:
+            return {}
 
         payload = {'error_count': error_data, 'total_count': total_data}
         self.num_hits += int(total_count)
@@ -566,7 +572,7 @@ class ElastAlerter():
 
     def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery):
         data = {
-                    "selects":rule['include'],
+                    "selects":[],
                     "start_time":dt_to_ts(starttime),
                     "end_time":dt_to_ts(endtime),
                     "freshquery": freshquery,
@@ -575,8 +581,14 @@ class ElastAlerter():
                     "limit":"500",
                     "aggregations":[{"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}]
                 }
-
-        res = requests.post(self.query_endpoint, json=data)
+        try:
+            res = requests.post(self.query_endpoint, json=data)
+            res.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            if len(str(e)) > 1024:
+                e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
+            self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
+            return None,0
         res = json.loads(res.content)
         return res['data'][0][agg_key], res['rows']
 

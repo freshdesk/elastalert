@@ -107,7 +107,6 @@ class ElastAlerter():
 
     def __init__(self, args):
         self.parse_args(args)
-        # pdb.set_trace()
         self.debug = self.args.debug
         self.verbose = self.args.verbose
 
@@ -161,6 +160,8 @@ class ElastAlerter():
 
         self.writeback_es = elasticsearch_client(self.conf)
         self._es_version = None
+
+        self.query_endpoint = self.conf['query_endpoint']
 
         remove = []
         for rule in self.rules:
@@ -312,20 +313,20 @@ class ElastAlerter():
             return '1969-12-30T00:00:00Z'
         return res['hits']['hits'][0][timestamp_field]
 
-    @staticmethod
-    def process_ch_hits(rule, hits):
-        processed_hits = []      
-        for hit in hits:
-            temp = {}
-            for key, value in hit.items():
-                temp[key] = value
+    # @staticmethod
+    # def process_ch_hits(rule, hits):
+    #     processed_hits = []      
+    #     for hit in hits:
+    #         temp = {}
+    #         for key, value in hit.items():
+    #             temp[key] = value
 
-            ts = hit['timestamp']
-            temp['timestamp'] = rule['ts_to_dt'](ts)
-            temp['_type'] = 'doc'
-            processed_hits.append(temp)
+    #         ts = hit['timestamp']
+    #         temp['timestamp'] = rule['ts_to_dt'](ts)
+    #         temp['_type'] = 'doc'
+    #         processed_hits.append(temp)
 
-        return processed_hits
+    #     return processed_hits
 
     @staticmethod
     def process_hits(rule, hits):
@@ -413,18 +414,18 @@ class ElastAlerter():
                 # self.total_hits = int(res['hits']['total'])
 
                 # data = {"selects":["timestamp","test_field"],"start_time":1635442598471,"end_time":1646069889001,"freshquery":"( test_field: test3 )","group_bys":[],"sort_orders":[{"sort_by":"timestamp","sort_direction":"desc"}],"limit":"500","aggregations":[]}
-                data = {
-                    "selects":rule['include'],
-                    "start_time":dt_to_ts(starttime),
-                    "end_time":dt_to_ts(endtime),
-                    "freshquery": rule['filter'][0]['query_string']['query'],
-                    "group_bys":[],
-                    "sort_orders":[{"sort_by":"timestamp","sort_direction":"desc"}],
-                    "limit":"500",
-                    "aggregations":[]
-                } 
-                res = requests.post('http://localhost:8080/v2/sherlock/traces/visualize', json=data)
-                res = json.loads(res.content)
+                # data = {
+                #     "selects":rule['include'],
+                #     "start_time":dt_to_ts(starttime),
+                #     "end_time":dt_to_ts(endtime),
+                #     "freshquery": rule['filter'][0]['query_string']['query'],
+                #     "group_bys":[],
+                #     "sort_orders":[{"sort_by":"timestamp","sort_direction":"desc"}],
+                #     "limit":"500",
+                #     "aggregations":[]
+                # } 
+                # res = requests.post('http://localhost:8080/v2/sherlock/traces/visualize', json=data)
+                # res = json.loads(res.content)
 
 
             if len(res.get('_shards', {}).get('failures', [])) > 0:
@@ -440,33 +441,33 @@ class ElastAlerter():
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
             self.handle_error('Error running query: %s' % (e), {'rule': rule['name'], 'query': query})
             return None
-        # hits = res['hits']['hits']
-        # self.num_hits += len(hits)
-        # lt = rule.get('use_local_time')
-        # status_log = "Queried rule %s from %s to %s: %s / %s hits" % (
-        #     rule['name'],
-        #     pretty_ts(starttime, lt),
-        #     pretty_ts(endtime, lt),
-        #     self.num_hits,
-        #     len(hits)
-        # )
-        # if self.total_hits > rule.get('max_query_size', self.max_query_size):
-        #     elastalert_logger.info("%s (scrolling..)" % status_log)
-        #     rule['scroll_id'] = res['_scroll_id']
-        # else:
-        #     elastalert_logger.info(status_log)
-        # hits = self.process_hits(rule, hits)
+        hits = res['hits']['hits']
+        self.num_hits += len(hits)
+        lt = rule.get('use_local_time')
+        status_log = "Queried rule %s from %s to %s: %s / %s hits" % (
+            rule['name'],
+            pretty_ts(starttime, lt),
+            pretty_ts(endtime, lt),
+            self.num_hits,
+            len(hits)
+        )
+        if self.total_hits > rule.get('max_query_size', self.max_query_size):
+            elastalert_logger.info("%s (scrolling..)" % status_log)
+            rule['scroll_id'] = res['_scroll_id']
+        else:
+            elastalert_logger.info(status_log)
+        hits = self.process_hits(rule, hits)
         
 
-        hits = res['data']
-        self.total_hits = len(res['data'])
-        self.num_hits += len(hits)
-        hits = self.process_ch_hits(rule, hits)
+        # hits = res['data']
+        # self.total_hits = len(res['data'])
+        # self.num_hits += len(hits)
+        # hits = self.process_ch_hits(rule, hits)
         
-        # Record doc_type for use in get_top_counts
-        if 'doc_type' not in rule and len(hits):
-            rule['doc_type'] = hits[0]['_type']
-        return hits
+        # # Record doc_type for use in get_top_counts
+        # if 'doc_type' not in rule and len(hits):
+        #     rule['doc_type'] = hits[0]['_type']
+        # return hits
 
     def get_hits_count(self, rule, starttime, endtime, index):
         """ Query Elasticsearch for the count of results and returns a list of timestamps
@@ -614,61 +615,44 @@ class ElastAlerter():
         # return {endtime: payload}
 
         agg_key = rule['metric_agg_type']+"("+rule['metric_agg_key']+")"
-        data = {
-                    "selects":[],
-                    "start_time":dt_to_ts(starttime),
-                    "end_time":dt_to_ts(endtime),
-                    "freshquery": rule['filter'][0]['query_string']['query'],
-                    "group_bys":[],
-                    "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
-                    "limit":"500",
-                    "aggregations":[{"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}]
-                } 
-        res = requests.post('http://localhost:8080/v2/sherlock/traces/visualize', json=data)
-        res = json.loads(res.content)
-        # pdb.set_trace()
-        if res['data'][0][agg_key] is None:
+        query = rule['filter'][0]['query_string']['query']
+        data, count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
+        
+        if data is None:
             return {}
-        payload = {rule['metric_agg_key']+"_"+rule['metric_agg_type']: {'value': res["data"][0]["avg(response_time)"]}}
+        payload = {rule['metric_agg_key']+"_"+rule['metric_agg_type']: {'value': data}}
 
-        self.num_hits += res['rows'] 
+        self.num_hits += count
         return {endtime: payload}
 
     def get_error_rate(self, rule, starttime, endtime):
         agg_key = rule['metric_agg_type']+"()"
-        data = {
-                    "selects":[],
-                    "start_time":dt_to_ts(starttime),
-                    "end_time":dt_to_ts(endtime),
-                    "freshquery": rule['filter'][0]['query_string']['query']+" AND "+rule['error_condition'],
-                    "group_bys":[],
-                    "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
-                    "limit":"500",
-                    "aggregations":[{"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}]
-                } 
-        res_err = requests.post('http://localhost:8080/v2/sherlock/traces/visualize', json=data)
-        res_err = json.loads(res_err.content)
-        if res_err['data'][0][agg_key] is None:
-            return {}
-        payload = {'error_count': res_err["data"][0][agg_key]}
+        query = rule['filter'][0]['query_string']['query']
+        total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
 
-        data = {
-                    "selects":[],
-                    "start_time":dt_to_ts(starttime),
-                    "end_time":dt_to_ts(endtime),
-                    "freshquery": rule['filter'][0]['query_string']['query'],
-                    "group_bys":[],
-                    "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
-                    "limit":"500",
-                    "aggregations":[{"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}]
-                } 
-        res_total = requests.post('http://localhost:8080/v2/sherlock/traces/visualize', json=data)
-        res_total = json.loads(res_total.content)
+        query = query+" AND "+rule['error_condition']
+        error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query)
 
-        payload.update({'total_count': res_total["data"][0][agg_key]})
+        payload = {'error_count': error_data, 'total_count': total_data}
+        self.num_hits += int(total_count)
 
-        self.num_hits += res_total['rows'] 
         return {endtime: payload}
+
+    def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery):
+        data = {
+                    "selects":rule['include'],
+                    "start_time":dt_to_ts(starttime),
+                    "end_time":dt_to_ts(endtime),
+                    "freshquery": freshquery,
+                    "group_bys":[],
+                    "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
+                    "limit":"500",
+                    "aggregations":[{"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}]
+                }
+
+        res = requests.post(self.query_endpoint, json=data)
+        res = json.loads(res.content)
+        return res['data'][0][agg_key], res['rows']
 
     def remove_duplicate_events(self, data, rule):
         new_events = []
@@ -734,7 +718,6 @@ class ElastAlerter():
             elif rule.get('use_terms_query'):
                 rule_inst.add_terms_data(data)
             elif isinstance(rule_inst, ErrorRateRule):
-                # pdb.set_trace()
                 rule_inst.calculate_err_rate(data)
             elif rule.get('aggregation_query_element'):
                 rule_inst.add_aggregation_data(data)
@@ -934,8 +917,6 @@ class ElastAlerter():
         """
         run_start = time.time()
         
-        # pdb.set_trace()
-
         self.current_es = elasticsearch_client(rule)
         self.current_es_addr = (rule['es_host'], rule['es_port'])
 

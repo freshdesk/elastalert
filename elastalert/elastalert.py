@@ -553,12 +553,14 @@ class ElastAlerter():
         return {endtime: payload}
 
     def get_error_rate(self, rule, starttime, endtime):
+        elastalert_logger.info("query start time and endtime %s at %s" % (starttime, endtime))
         agg_key = '{}({})'.format(rule['total_agg_type'],rule['total_agg_key'])
         query = self.get_query_string(rule)
         aggregation = {"function": rule['total_agg_type'].upper(), "field": rule['total_agg_key']}
         
         total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
+        elastalert_logger.info("total data is %s" % (total_data))
         if total_data is None:
             return {}
         
@@ -572,6 +574,7 @@ class ElastAlerter():
 
         error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
+        elastalert_logger.info("error data is %s" % (error_data))
         if error_data is None:
             return {}
 

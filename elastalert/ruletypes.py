@@ -1037,7 +1037,7 @@ class ErrorRateRule(BaseAggregationRule):
         for timestamp, payload_data in payload.iteritems():
             if int(payload_data['total_count']) > 0:
                 rate = float(payload_data['error_count'])/float(payload_data['total_count'])
-                rate = float(rate*100)/float(self.rules['sampling'])
+                rate = float(rate)/float(self.rules['sampling'])
                 rate = rate*100
                 if 'threshold' in self.rules and rate > self.rules['threshold']:
                     match = {self.rules['timestamp_field']: timestamp, 'error_rate': rate}

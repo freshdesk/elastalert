@@ -1029,9 +1029,14 @@ class ErrorRateRule(BaseAggregationRule):
         # hardcoding uniq aggregation for total count
         self.rules['total_agg_type'] = "uniq"
 
+        self.rules['aggregation_query_element'] = self.generate_aggregation_query()
+
     def get_match_str(self, match):
         message = 'Threshold violation, error rate is %s' % (match['error_rate'])
         return message
+
+    def generate_aggregation_query(self):
+        return {"function": self.rules['total_agg_type'].upper(), "field": self.rules['total_agg_key']}
         
     def calculate_err_rate(self,payload):
         for timestamp, payload_data in payload.iteritems():

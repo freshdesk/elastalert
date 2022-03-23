@@ -35,6 +35,7 @@ from ruletypes import ErrorRateRule
 from util import add_raw_postfix
 from util import cronite_datetime_to_timestamp
 from util import dt_to_ts
+from util import dt_to_ts_with_format
 from util import dt_to_unix
 from util import EAException
 from util import elastalert_logger
@@ -589,10 +590,11 @@ class ElastAlerter():
         return ""
 
     def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery,aggregation):
+        elastalert_logger.info("query start timestamp and end timestamp %s at %s" % (dt_to_ts(starttime), dt_to_ts(endtime)))
         data = {
                     "selects":[],
-                    "start_time":dt_to_ts(starttime),
-                    "end_time":dt_to_ts(endtime),
+                    "start_time":dt_to_ts_with_format(starttime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
+                    "end_time":dt_to_ts_with_format(endtime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
                     "freshquery": freshquery,
                     "group_bys":[],
                     "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
@@ -600,6 +602,7 @@ class ElastAlerter():
                     "aggregations":[aggregation]
                 }
         try:
+            elastalert_logger.info("request data is %s" % json.dumps(data))
             res = requests.post(self.query_endpoint, json=data)
             res.raise_for_status()
         except requests.exceptions.RequestException as e:

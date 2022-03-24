@@ -579,7 +579,7 @@ class ElastAlerter():
         if error_data is None:
             return {}
 
-        payload = {'error_count': error_data, 'total_count': total_data}
+        payload = {'error_count': error_data, 'total_count': total_data, 'start_time': starttime, 'end_time': endtime}
         self.num_hits += int(total_count)
 
         return {endtime: payload}

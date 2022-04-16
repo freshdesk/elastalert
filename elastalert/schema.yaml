@@ -133,7 +133,7 @@ oneOf:
     required: [sampling, threshold]
     properties:
       sampling: {type: integer}
-      threshold: {type: integer}
+      threshold: {type: number}
       error_condition: {type: string}
       unique_column: {type: string}
       

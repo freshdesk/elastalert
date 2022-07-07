@@ -303,6 +303,89 @@ def elasticsearch_client(conf):
                          client_cert=es_conn_conf['client_cert'],
                          client_key=es_conn_conf['client_key'])
 
+def kibana_adapter_client(conf):
+    """ returns an Elasticsearch instance configured using an es_conn_config """
+    es_conn_conf = build_adapter_conn_config(conf)
+    auth = Auth()
+    es_conn_conf['http_auth'] = auth(host=es_conn_conf['es_host'],
+                                     username=es_conn_conf['es_username'],
+                                     password=es_conn_conf['es_password'],
+                                     aws_region=es_conn_conf['aws_region'],
+                                     profile_name=es_conn_conf['profile'])
+
+    return Elasticsearch(host=es_conn_conf['es_host'],
+                         port=es_conn_conf['es_port'],
+                         url_prefix=es_conn_conf['es_url_prefix'],
+                         use_ssl=es_conn_conf['use_ssl'],
+                         verify_certs=es_conn_conf['verify_certs'],
+                         ca_certs=es_conn_conf['ca_certs'],
+                         connection_class=RequestsHttpConnection,
+                         http_auth=es_conn_conf['http_auth'],
+                         timeout=es_conn_conf['es_conn_timeout'],
+                         send_get_body_as=es_conn_conf['send_get_body_as'],
+                         client_cert=es_conn_conf['client_cert'],
+                         client_key=es_conn_conf['client_key'])
+
+def build_adapter_conn_config(conf):
+    """ Given a conf dictionary w/ raw config properties 'use_ssl', 'es_host', 'es_port'
+    'es_username' and 'es_password', this will return a new dictionary
+    with properly initialized values for 'es_host', 'es_port', 'use_ssl' and 'http_auth' which
+    will be a basicauth username:password formatted string """
+    parsed_conf = {}
+    parsed_conf['use_ssl'] = os.environ.get('ES_USE_SSL', False)
+    parsed_conf['verify_certs'] = True
+    parsed_conf['ca_certs'] = None
+    parsed_conf['client_cert'] = None
+    parsed_conf['client_key'] = None
+    parsed_conf['http_auth'] = None
+    parsed_conf['es_username'] = None
+    parsed_conf['es_password'] = None
+    parsed_conf['aws_region'] = None
+    parsed_conf['profile'] = None
+    parsed_conf['es_host'] = conf['kibana_adapter']
+    parsed_conf['es_port'] = conf['kibana_adapter_port']
+    parsed_conf['es_url_prefix'] = ''
+    parsed_conf['es_conn_timeout'] = conf.get('es_conn_timeout', 20)
+    parsed_conf['send_get_body_as'] = conf.get('es_send_get_body_as', 'GET')
+
+    if os.environ.get('ES_USERNAME'):
+        parsed_conf['es_username'] = os.environ.get('ES_USERNAME')
+        parsed_conf['es_password'] = os.environ.get('ES_PASSWORD')
+    elif 'es_username' in conf:
+        parsed_conf['es_username'] = conf['es_username']
+        parsed_conf['es_password'] = conf['es_password']
+
+    if 'aws_region' in conf:
+        parsed_conf['aws_region'] = conf['aws_region']
+
+    # Deprecated
+    if 'boto_profile' in conf:
+        logging.warning('Found deprecated "boto_profile", use "profile" instead!')
+        parsed_conf['profile'] = conf['boto_profile']
+
+    if 'profile' in conf:
+        parsed_conf['profile'] = conf['profile']
+
+    if 'use_ssl' in conf:
+        parsed_conf['use_ssl'] = conf['use_ssl']
+
+    if 'verify_certs' in conf:
+        parsed_conf['verify_certs'] = conf['verify_certs']
+
+    if 'ca_certs' in conf:
+        parsed_conf['ca_certs'] = conf['ca_certs']
+
+    if 'client_cert' in conf:
+        parsed_conf['client_cert'] = conf['client_cert']
+
+    if 'client_key' in conf:
+        parsed_conf['client_key'] = conf['client_key']
+
+    if 'es_url_prefix' in conf:
+        parsed_conf['es_url_prefix'] = conf['es_url_prefix']
+
+    return parsed_conf
+
 
 def build_es_conn_config(conf):
     """ Given a conf dictionary w/ raw config properties 'use_ssl', 'es_host', 'es_port'

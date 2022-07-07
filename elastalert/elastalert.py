@@ -35,6 +35,7 @@ from util import dt_to_unix
 from util import EAException
 from util import elastalert_logger
 from util import elasticsearch_client
+from util import kibana_adapter_client
 from util import format_index
 from util import lookup_es_key
 from util import parse_deadline
@@ -154,6 +155,7 @@ class ElastAlerter():
         self.string_multi_field_name = self.conf.get('string_multi_field_name', False)
 
         self.writeback_es = elasticsearch_client(self.conf)
+        self.kibana_adapter = kibana_adapter_client(self.conf)
         self._es_version = None
 
         remove = []
@@ -171,9 +173,7 @@ class ElastAlerter():
 
     @property
     def es_version(self):
-        if self._es_version is None:
-            self._es_version = self.get_version()
-        return self._es_version
+        return "6.8.23"
 
     def is_atleastfive(self):
         return int(self.es_version.split(".")[0]) >= 5
@@ -216,6 +216,21 @@ class ElastAlerter():
         return writeback_index
 
     @staticmethod
+    def get_msearch_query(query, rule):
+        search_arr = []
+        search_arr.append({'index': [rule['index']]})
+        if rule.get('use_count_query'):
+            query['size'] = 0
+        if rule['include']:
+            query['_source'] = {}
+            query['_source']['includes'] = rule['include']
+        search_arr.append(query)
+        request = ''
+        for each in search_arr:
+            request += '%s \n' %json.dumps(each)
+        return request
+
+    @staticmethod
     def get_query(filters, starttime=None, endtime=None, sort=True, timestamp_field='@timestamp', to_ts_func=dt_to_ts, desc=False,
                   five=False):
         """ Returns a query dict that will apply a list of filters, filter by
@@ -234,10 +249,7 @@ class ElastAlerter():
         if starttime and endtime:
             es_filters['filter']['bool']['must'].insert(0, {'range': {timestamp_field: {'gt': starttime,
                                                                                         'lte': endtime}}})
-        if five:
-            query = {'query': {'bool': es_filters}}
-        else:
-            query = {'query': {'filtered': es_filters}}
+        query = {'query': {'bool': es_filters}}
         if sort:
             query['sort'] = [{timestamp_field: {'order': 'desc' if desc else 'asc'}}]
         return query
@@ -247,12 +259,10 @@ class ElastAlerter():
         query_element = query['query']
         if 'sort' in query_element:
             query_element.pop('sort')
-        if not five:
-            query_element['filtered'].update({'aggs': {'counts': {'terms': {'field': field, 'size': size}}}})
-            aggs_query = {'aggs': query_element}
-        else:
-            aggs_query = query
-            aggs_query['aggs'] = {'counts': {'terms': {'field': field, 'size': size}}}
+        
+        aggs_query = query
+        aggs_query['aggs'] = {'counts': {'terms': {'field': field, 'size': size}}}
+        
         return aggs_query
 
     def get_aggregation_query(self, query, rule, query_key, terms_size, timestamp_field='@timestamp'):
@@ -281,12 +291,9 @@ class ElastAlerter():
             for idx, key in reversed(list(enumerate(query_key.split(',')))):
                 aggs_element = {'bucket_aggs': {'terms': {'field': key, 'size': terms_size}, 'aggs': aggs_element}}
 
-        if not rule['five']:
-            query_element['filtered'].update({'aggs': aggs_element})
-            aggs_query = {'aggs': query_element}
-        else:
-            aggs_query = query
-            aggs_query['aggs'] = aggs_element
+        aggs_query = query
+        aggs_query['aggs'] = aggs_element
+        
         return aggs_query
 
     def get_index_start(self, index, timestamp_field='@timestamp'):
@@ -368,28 +375,22 @@ class ElastAlerter():
             to_ts_func=rule['dt_to_ts'],
             five=rule['five'],
         )
-        extra_args = {'_source_include': rule['include']}
-        scroll_keepalive = rule.get('scroll_keepalive', self.scroll_keepalive)
-        if not rule.get('_source_enabled'):
-            if rule['five']:
-                query['stored_fields'] = rule['include']
-            else:
-                query['fields'] = rule['include']
-            extra_args = {}
+        
+        request = self.get_msearch_query(query,rule)
+        
+        # extra_args = {'_source_include': rule['include']}
+        # scroll_keepalive = rule.get('scroll_keepalive', self.scroll_keepalive)
+        # if not rule.get('_source_enabled'):
+            # if rule['five']:
+                # query['stored_fields'] = rule['include']
+            # else:
+                # query['fields'] = rule['include']
+            # extra_args = {}
 
         try:
-            if scroll:
-                res = self.current_es.scroll(scroll_id=rule['scroll_id'], scroll=scroll_keepalive)
-            else:
-                res = self.current_es.search(
-                    scroll=scroll_keepalive,
-                    index=index,
-                    size=rule.get('max_query_size', self.max_query_size),
-                    body=query,
-                    ignore_unavailable=True,
-                    **extra_args
-                )
-                self.total_hits = int(res['hits']['total'])
+            res = self.current_es.msearch(body=request)
+            res = res['responses'][0]
+            self.total_hits = int(res['hits']['total'])
 
             if len(res.get('_shards', {}).get('failures', [])) > 0:
                 errs = [e['reason']['reason'] for e in res['_shards']['failures'] if 'Failed to parse' in e['reason']['reason']]
@@ -416,7 +417,7 @@ class ElastAlerter():
         )
         if self.total_hits > rule.get('max_query_size', self.max_query_size):
             elastalert_logger.info("%s (scrolling..)" % status_log)
-            rule['scroll_id'] = res['_scroll_id']
+            # rule['scroll_id'] = res['_scroll_id']
         else:
             elastalert_logger.info(status_log)
 
@@ -447,8 +448,11 @@ class ElastAlerter():
             five=rule['five']
         )
 
+        request = self.get_msearch_query(query,rule)
+
         try:
-            res = self.current_es.count(index=index, doc_type=rule['doc_type'], body=query, ignore_unavailable=True)
+            res = self.current_es.msearch(body=request)
+            res = res['responses'][0]
         except ElasticsearchException as e:
             # Elasticsearch sometimes gives us GIGANTIC error messages
             # (so big that they will fill the entire terminal buffer)
@@ -457,12 +461,12 @@ class ElastAlerter():
             self.handle_error('Error running count query: %s' % (e), {'rule': rule['name'], 'query': query})
             return None
 
-        self.num_hits += res['count']
+        self.num_hits += res['hits']['total']
         lt = rule.get('use_local_time')
         elastalert_logger.info(
-            "Queried rule %s from %s to %s: %s hits" % (rule['name'], pretty_ts(starttime, lt), pretty_ts(endtime, lt), res['count'])
+            "Queried rule %s from %s to %s: %s hits" % (rule['name'], pretty_ts(starttime, lt), pretty_ts(endtime, lt), res['hits']['total'])
         )
-        return {endtime: res['count']}
+        return {endtime: res['hits']['total']}
 
     def get_hits_terms(self, rule, starttime, endtime, index, key, qk=None, size=None):
         rule_filter = copy.copy(rule['filter'])
@@ -500,18 +504,10 @@ class ElastAlerter():
         if size is None:
             size = rule.get('terms_size', 50)
         query = self.get_terms_query(base_query, size, key, rule['five'])
-
+        request = self.get_msearch_query(query,rule)
         try:
-            if not rule['five']:
-                res = self.current_es.search(
-                    index=index,
-                    doc_type=rule['doc_type'],
-                    body=query,
-                    search_type='count',
-                    ignore_unavailable=True
-                )
-            else:
-                res = self.current_es.search(index=index, doc_type=rule['doc_type'], body=query, size=0, ignore_unavailable=True)
+            res = self.current_es.msearch(body=request)
+            res = res['responses'][0]
         except ElasticsearchException as e:
             # Elasticsearch sometimes gives us GIGANTIC error messages
             # (so big that they will fill the entire terminal buffer)
@@ -638,15 +634,15 @@ class ElastAlerter():
             else:
                 rule_inst.add_data(data)
 
-        try:
-            if rule.get('scroll_id') and self.num_hits < self.total_hits:
-                self.run_query(rule, start, end, scroll=True)
-        except RuntimeError:
-            # It's possible to scroll far enough to hit max recursive depth
-            pass
+        # try:
+        #     if rule.get('scroll_id') and self.num_hits < self.total_hits:
+        #         self.run_query(rule, start, end, scroll=True)
+        # except RuntimeError:
+        #     # It's possible to scroll far enough to hit max recursive depth
+        #     pass
 
-        if 'scroll_id' in rule:
-            rule.pop('scroll_id')
+        # if 'scroll_id' in rule:
+        #     rule.pop('scroll_id')
 
         return True
 
@@ -663,12 +659,8 @@ class ElastAlerter():
         query.update(sort)
 
         try:
-            if self.is_atleastsix():
-                index = self.get_six_index('elastalert_status')
-                res = self.writeback_es.search(index=index, doc_type='elastalert_status',
-                                               size=1, body=query, _source_include=['endtime', 'rule_name'])
-            else:
-                res = self.writeback_es.search(index=self.writeback_index, doc_type='elastalert_status',
+            index = self.get_six_index('elastalert_status')
+            res = self.writeback_es.search(index=index, doc_type='elastalert_status',
                                                size=1, body=query, _source_include=['endtime', 'rule_name'])
             if res['hits']['hits']:
                 endtime = ts_to_dt(res['hits']['hits'][0]['_source']['endtime'])
@@ -830,7 +822,7 @@ class ElastAlerter():
         """
         run_start = time.time()
 
-        self.current_es = elasticsearch_client(rule)
+        self.current_es = kibana_adapter_client(rule)
         self.current_es_addr = (rule['es_host'], rule['es_port'])
 
         # If there are pending aggregate matches, try processing them
@@ -1002,13 +994,15 @@ class ElastAlerter():
 
     @staticmethod
     def modify_rule_for_ES5(new_rule):
+        new_rule['five'] = True
+        # return
         # Get ES version per rule
-        rule_es = elasticsearch_client(new_rule)
-        if int(rule_es.info()['version']['number'].split(".")[0]) >= 5:
-            new_rule['five'] = True
-        else:
-            new_rule['five'] = False
-            return
+        # rule_es = elasticsearch_client(new_rule)
+        # if int(rule_es.info()['version']['number'].split(".")[0]) >= 5:
+        #     new_rule['five'] = True
+        # else:
+        #     new_rule['five'] = False
+        #     return
 
         # In ES5, filters starting with 'query' should have the top wrapper removed
         new_filters = []
@@ -1769,12 +1763,8 @@ class ElastAlerter():
         query.update(sort)
 
         try:
-            if(self.is_atleastsix()):
-                index = self.get_six_index('silence')
-                res = self.writeback_es.search(index=index, doc_type='silence',
-                                               size=1, body=query, _source_include=['until', 'exponent'])
-            else:
-                res = self.writeback_es.search(index=self.writeback_index, doc_type='silence',
+            index = self.get_six_index('silence')
+            res = self.writeback_es.search(index=index, doc_type='silence',
                                                size=1, body=query, _source_include=['until', 'exponent'])
         except ElasticsearchException as e:
             self.handle_error("Error while querying for alert silence status: %s" % (e), {'rule': rule_name})

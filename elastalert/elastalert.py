@@ -49,7 +49,7 @@ from util import ts_add
 from util import ts_now
 from util import ts_to_dt
 from util import unix_to_dt
-
+from prometheus_wrapper import PrometheusWrapper
 
 class ElastAlerter():
     """ The main ElastAlert runner. This class holds all state about active rules,
@@ -99,6 +99,7 @@ class ElastAlerter():
             dest='es_debug_trace',
             help='Enable logging from Elasticsearch queries as curl command. Queries will be logged to file. Note that '
                  'this will incorrectly display localhost:9200 as the host/port')
+        parser.add_argument('--prometheus_port', type=int, dest='prometheus_port', default=8000, help='Enables Prometheus metrics on specified port.')
         self.args = parser.parse_args(args)
 
     def __init__(self, args):
@@ -153,6 +154,7 @@ class ElastAlerter():
         self.disabled_rules = []
         self.replace_dots_in_field_names = self.conf.get('replace_dots_in_field_names', False)
         self.string_multi_field_name = self.conf.get('string_multi_field_name', False)
+        self.prometheus_port = self.args.prometheus_port
 
         self.writeback_es = elasticsearch_client(self.conf)
         self.kibana_adapter = kibana_adapter_client(self.conf)
@@ -1906,6 +1908,9 @@ def main(args=None):
     if not args:
         args = sys.argv[1:]
     client = ElastAlerter(args)
+    if not client.debug:
+        p = PrometheusWrapper(client)
+        p.start()
     if not client.args.silence:
         client.start()
 

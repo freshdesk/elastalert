@@ -132,6 +132,9 @@ def load_rule_yaml(filename):
         except yaml.scanner.ScannerError as e:
             raise EAException('Could not parse file %s: %s' % (filename, e))
 
+        if 'query_string' in loaded['filter'][0]:
+             loaded['filter'][0]['query_string']['default_operator'] = "AND"
+
         # Special case for merging filters - if both files specify a filter merge (AND) them
         if 'filter' in rule and 'filter' in loaded:
             rule['filter'] = loaded['filter'] + rule['filter']

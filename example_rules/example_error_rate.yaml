@@ -2,19 +2,19 @@ name: Example Error Rate
 type: error_rate
 
 buffer_time:
-  hours: 24
+  hours: 1 
 
-index: sherlock.span
+index: dummy
   
-sampling : 1
-threshold: 0.05
-unique_column: serviceName
-error_condition: "traceID:'1bc22dde6428be2812066f6cd7a18bbc'"
+sampling : 100
+threshold: 1
+unique_column: traceID
+error_condition: "exception.message: *"
 
 filter:
 - query:
     query_string:
-      query: "serviceName: 'rashmi-laptop'"
+      query: "serviceName: 'search-service'"
     
 
 # (Required)

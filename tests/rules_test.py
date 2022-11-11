@@ -14,6 +14,7 @@ from elastalert.ruletypes import EventWindow
 from elastalert.ruletypes import FlatlineRule
 from elastalert.ruletypes import FrequencyRule
 from elastalert.ruletypes import MetricAggregationRule
+from elastalert.ruletypes import ErrorRateRule
 from elastalert.ruletypes import NewTermsRule
 from elastalert.ruletypes import PercentageMatchRule
 from elastalert.ruletypes import SpikeRule
@@ -1158,6 +1159,65 @@ def test_metric_aggregation():
     rule = MetricAggregationRule(rules)
     rule.check_matches(datetime.datetime.now(), 'qk_val', {'cpu_pct_avg': {'value': 0.95}})
     assert rule.matches[0]['qk'] == 'qk_val'
+
+
+def test_error_rate():
+    rules = {
+                'buffer_time': datetime.timedelta(minutes=5),
+                'sampling' : 100,
+                'threshold': 0.5,
+                'error_condition': "exception.message: *",
+                'timestamp_field':'timestamp'
+             }
+
+    rule = ErrorRateRule(rules)
+
+    #testing default initialization baesd on error_calculation_method method
+
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_all_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_all_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_traces_with_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == False
+
+    timestamp = ts_now() 
+
+    payload = {
+       timestamp : 
+       {
+        'total_count': 0, 
+        'start_time': timestamp, 
+        'error_count': 0, 
+        'end_time': timestamp
+        }
+    }
+
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 0
+    
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 6
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 1
+
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 4
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 1
+
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 8
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 2
 
 
 def test_metric_aggregation_complex_query_key():

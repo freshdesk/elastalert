@@ -26,7 +26,7 @@ type: frequency
 
 # (Required)
 # Index to search, wildcard supported
-index: logstash-*
+index: sherlock.span
 
 # (Required, frequency specific)
 # Alert when this many documents matching the query occur within a timeframe
@@ -43,14 +43,14 @@ timeframe:
 # For more info: http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/query-dsl.html
 filter:
 - term:
-    some_field: "some_value"
+    hostName: "*"
 
 # (Required)
 # The alert is use when a match is found
 alert:
-- "email"
+- "debug"
 
 # (required, email specific)
 # a list of email addresses to send alerts to
-email:
-- "elastalert@example.com"
+# email:
+# - "elastalert@example.com"

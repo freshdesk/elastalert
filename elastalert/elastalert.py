@@ -383,7 +383,7 @@ class ElastAlerter():
             else:
                 query['fields'] = rule['include']
             extra_args = {}
-
+        logging.info(query)
         try:
             if scroll:
                 res = self.current_es.scroll(scroll_id=rule['scroll_id'], scroll=scroll_keepalive)
@@ -497,8 +497,8 @@ class ElastAlerter():
 
         base_query = self.get_query(
             rule_filter,
-            starttime,
-            endtime,
+            dt_to_ts_with_format(starttime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
+            dt_to_ts_with_format(endtime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
             timestamp_field=rule['timestamp_field'],
             sort=False,
             to_ts_func=rule['dt_to_ts'],

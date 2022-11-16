@@ -15,6 +15,9 @@
 #es_username: someusername
 #es_password: somepassword
 
+kibana_adapter: localhost
+kibana_adapter_port: 9999
+
 # (Required)
 # Rule name, must be unique
 name: Example frequency rule
@@ -26,31 +29,37 @@ type: frequency
 
 # (Required)
 # Index to search, wildcard supported
-index: logstash-*
+index: traces
 
 # (Required, frequency specific)
 # Alert when this many documents matching the query occur within a timeframe
-num_events: 50
+num_events: 500
 
 # (Required, frequency specific)
 # num_events must occur within this amount of time to trigger an alert
 timeframe:
-  hours: 4
+  minutes: 2
+
+timestamp_field: timestamp
+timestamp_type: 'unix'
+
+# max_query_size: 600
 
 # (Required)
 # A list of Elasticsearch filters used for find events
 # These filters are joined with AND and nested in a filtered query
 # For more info: http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/query-dsl.html
 filter:
-- term:
-    some_field: "some_value"
+- query:
+    query_string:
+      query: "serviceName: 'SRE_freshcaller_cpaas'"
 
 # (Required)
 # The alert is use when a match is found
 alert:
-- "email"
+- "debug"
 
 # (required, email specific)
 # a list of email addresses to send alerts to
-email:
-- "elastalert@example.com"
+# email:
+# - "elastalert@example.com"

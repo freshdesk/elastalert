@@ -29,7 +29,7 @@ type: frequency
 
 # (Required)
 # Index to search, wildcard supported
-index: traces
+index: logstash*
 
 # (Required, frequency specific)
 # Alert when this many documents matching the query occur within a timeframe
@@ -38,13 +38,13 @@ num_events: 1
 # (Required, frequency specific)
 # num_events must occur within this amount of time to trigger an alert
 timeframe:
-  minutes: 2
+  hours: 24
 
-timestamp_field: timestamp
-timestamp_type: 'unix'
+# timestamp_field: timestamp
+# timestamp_type: 'unix'
 
-use_count_query: true
-doc_type: _doc
+# use_count_query: true
+# doc_type: _doc
 
 # (Required)
 # A list of Elasticsearch filters used for find events
@@ -53,7 +53,7 @@ doc_type: _doc
 filter:
 - query:
     query_string:
-      query: "serviceName: 'SRE_freshcaller_cpaas'"
+      query: "extension: 'jpg'"
 
 # (Required)
 # The alert is use when a match is found

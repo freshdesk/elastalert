@@ -43,6 +43,8 @@ timeframe:
 timestamp_field: timestamp
 timestamp_type: 'unix'
 
+use_count_query: true
+doc_type: _doc
 # max_query_size: 600
 
 # (Required)

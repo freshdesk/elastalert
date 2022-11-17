@@ -3,6 +3,7 @@ import collections
 import datetime
 import logging
 import os
+import types
 
 import dateutil.parser
 import dateutil.tz
@@ -235,7 +236,10 @@ def unixms_to_dt(ts):
 
 
 def unix_to_dt(ts):
-    dt = datetime.datetime.utcfromtimestamp(float(ts))
+    if(type(ts) == types.UnicodeType):
+        dt = datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S.%f')
+    else:
+        dt = datetime.datetime.utcfromtimestamp(float(ts))
     dt = dt.replace(tzinfo=dateutil.tz.tzutc())
     return dt
 

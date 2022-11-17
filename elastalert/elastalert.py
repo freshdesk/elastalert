@@ -10,10 +10,13 @@ import sys
 import time
 import timeit
 import traceback
+import requests
 from email.mime.text import MIMEText
 from smtplib import SMTP
 from smtplib import SMTPException
 from socket import error
+
+
 
 import dateutil.tz
 import kibana
@@ -28,9 +31,11 @@ from elasticsearch.exceptions import ElasticsearchException
 from elasticsearch.exceptions import TransportError
 from enhancements import DropMatchException
 from ruletypes import FlatlineRule
+from ruletypes import ErrorRateRule
 from util import add_raw_postfix
 from util import cronite_datetime_to_timestamp
 from util import dt_to_ts
+from util import dt_to_ts_with_format
 from util import dt_to_unix
 from util import EAException
 from util import elastalert_logger
@@ -159,6 +164,8 @@ class ElastAlerter():
         self.writeback_es = elasticsearch_client(self.conf)
         self.kibana_adapter = kibana_adapter_client(self.conf)
         self._es_version = None
+
+        self.query_endpoint = self.conf['query_endpoint']
 
         remove = []
         for rule in self.rules:
@@ -532,43 +539,77 @@ class ElastAlerter():
         return {endtime: buckets}
 
     def get_hits_aggregation(self, rule, starttime, endtime, index, query_key, term_size=None):
-        rule_filter = copy.copy(rule['filter'])
-        base_query = self.get_query(
-            rule_filter,
-            starttime,
-            endtime,
-            timestamp_field=rule['timestamp_field'],
-            sort=False,
-            to_ts_func=rule['dt_to_ts'],
-            five=rule['five']
-        )
-        if term_size is None:
-            term_size = rule.get('terms_size', 50)
-        query = self.get_aggregation_query(base_query, rule, query_key, term_size, rule['timestamp_field'])
+        agg_key = '{}({})'.format(rule['metric_agg_type'],rule['metric_agg_key'])
+        query = self.get_query_string(rule)
+        aggregation = {"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}
+        data, count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
+        
+        if data is None:
+            return {}
+        payload = {rule['metric_agg_key']+"_"+rule['metric_agg_type']: {'value': data}}
+
+        self.num_hits += count
+        return {endtime: payload}
+
+    def get_error_rate(self, rule, starttime, endtime):
+        elastalert_logger.info("query start time and endtime %s at %s" % (starttime, endtime))
+        agg_key = '{}({})'.format(rule['total_agg_type'],rule['total_agg_key'])
+        query = self.get_query_string(rule)
+        aggregation = {"function": rule['total_agg_type'].upper(), "field": rule['total_agg_key']}
+        
+        total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
+
+        elastalert_logger.info("total data is %s" % (total_data))
+        if total_data is None:
+            return {}
+        
+        agg_key = "count()"
+        if(query):
+            query = '{} AND {}'.format(query,rule['error_condition'])
+        else:
+            query = rule['error_condition']
+
+        aggregation = {"function": "COUNT", "field": "1"}
+
+        error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
+
+        elastalert_logger.info("error data is %s" % (error_data))
+        if error_data is None:
+            return {}
+
+        payload = {'error_count': error_data, 'total_count': total_data, 'start_time': starttime, 'end_time': endtime}
+        self.num_hits += int(total_count)
+
+        return {endtime: payload}
+
+    def get_query_string(self, rule):
+        if rule['filter'] and ('query_string' in rule['filter'][0]) and ('query' in rule['filter'][0]['query_string']):
+            return rule['filter'][0]['query_string']['query']
+        return ""
+
+    def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery,aggregation):
+        elastalert_logger.info("query start timestamp and end timestamp %s at %s" % (dt_to_ts(starttime), dt_to_ts(endtime)))
+        data = {
+                    "selects":[],
+                    "start_time":dt_to_ts_with_format(starttime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
+                    "end_time":dt_to_ts_with_format(endtime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
+                    "freshquery": freshquery,
+                    "group_bys":[],
+                    "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
+                    "limit":"500",
+                    "aggregations":[aggregation]
+                }
         try:
-            if not rule['five']:
-                res = self.current_es.search(
-                    index=index,
-                    doc_type=rule.get('doc_type'),
-                    body=query,
-                    search_type='count',
-                    ignore_unavailable=True
-                )
-            else:
-                res = self.current_es.search(index=index, doc_type=rule.get('doc_type'), body=query, size=0, ignore_unavailable=True)
-        except ElasticsearchException as e:
+            elastalert_logger.info("request data is %s" % json.dumps(data))
+            res = requests.post(self.query_endpoint, json=data)
+            res.raise_for_status()
+        except requests.exceptions.RequestException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
             self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
-            return None
-        if 'aggregations' not in res:
-            return {}
-        if not rule['five']:
-            payload = res['aggregations']['filtered']
-        else:
-            payload = res['aggregations']
-        self.num_hits += res['hits']['total']
-        return {endtime: payload}
+            return None,0
+        res = json.loads(res.content)
+        return res['data'][0][agg_key], res['rows']
 
     def remove_duplicate_events(self, data, rule):
         new_events = []
@@ -614,6 +655,8 @@ class ElastAlerter():
             data = self.get_hits_count(rule, start, end, index)
         elif rule.get('use_terms_query'):
             data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
+        elif isinstance(rule_inst, ErrorRateRule):
+            data = self.get_error_rate(rule, start, end)
         elif rule.get('aggregation_query_element'):
             data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
         else:
@@ -631,6 +674,8 @@ class ElastAlerter():
                 rule_inst.add_count_data(data)
             elif rule.get('use_terms_query'):
                 rule_inst.add_terms_data(data)
+            elif isinstance(rule_inst, ErrorRateRule):
+                rule_inst.calculate_err_rate(data)
             elif rule.get('aggregation_query_element'):
                 rule_inst.add_aggregation_data(data)
             else:

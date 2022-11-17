@@ -129,6 +129,14 @@ oneOf:
       # custom rules include a period in the rule type
       type: {pattern: "[.]"}
 
+  - title: Error Rate
+    required: [sampling, threshold]
+    properties:
+      sampling: {type: integer}
+      threshold: {type: number}
+      error_condition: {type: string}
+      unique_column: {type: string}
+      
 properties:
 
   # Common Settings

@@ -1,0 +1,15 @@
+name: "Heartbeat flatline Example Alert"
+type: any
+index: logstash*
+
+filter:
+- query:
+    query_string:
+      query: "response: '200'"
+
+aggregation:
+  hours: 24
+
+alert: 
+  - "debug"
+

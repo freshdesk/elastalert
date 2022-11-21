@@ -30,6 +30,8 @@ type: frequency
 # (Required)
 # Index to search, wildcard supported
 index: traces
+# index: spans
+
 
 # (Required, frequency specific)
 # Alert when this many documents matching the query occur within a timeframe
@@ -54,6 +56,7 @@ filter:
 - query:
     query_string:
       query: "serviceName: 'SRE_freshcaller_cpaas'"
+      # query: "serviceName: *"
 
 # (Required)
 # The alert is use when a match is found

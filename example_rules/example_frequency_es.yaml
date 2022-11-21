@@ -16,7 +16,7 @@
 #es_password: somepassword
 
 kibana_adapter: localhost
-kibana_adapter_port: 9999
+kibana_adapter_port: 9200
 
 # (Required)
 # Rule name, must be unique
@@ -53,7 +53,7 @@ timeframe:
 filter:
 - query:
     query_string:
-      query: "extension: 'jpg'"
+      query: "response: '200'"
 
 # (Required)
 # The alert is use when a match is found

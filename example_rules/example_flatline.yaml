@@ -1,0 +1,23 @@
+name: "Heartbeat flatline Example Alert"
+type: flatline
+index: "traces"
+
+threshold: 10
+
+timeframe:
+  hours: 12
+
+timestamp_field: timestamp
+timestamp_type: 'unix'
+
+filter:
+- query:
+    query_string:
+      query: "serviceName: 'SRE_freshcaller_cpaas'"
+
+use_count_query: true
+doc_type: _doc
+
+alert: 
+  - "debug"
+

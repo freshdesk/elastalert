@@ -582,7 +582,7 @@ class ElastAlerter():
             return {}
 
         payload = {'error_count': error_data, 'total_count': total_data, 'start_time': starttime, 'end_time': endtime}
-        self.num_hits += int(total_count)
+        self.num_hits += int(error_data)
         
         return {endtime: payload}
 
@@ -600,7 +600,6 @@ class ElastAlerter():
                     "freshquery": freshquery,
                     "group_bys":[],
                     "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
-                    "limit":"500",
                     "aggregations":[aggregation]
                 }
         try:
@@ -614,6 +613,9 @@ class ElastAlerter():
             return None,0
         res = json.loads(res.content)
         return int(res['data'][0][agg_key]), res['rows']
+        elastalert_logger.info("request data is %s" % json.dumps(data))
+        # res = requests.post(self.query_endpoint, json=data)
+        # return None, None
 
     def remove_duplicate_events(self, data, rule):
         new_events = []

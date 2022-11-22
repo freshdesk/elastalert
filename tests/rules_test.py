@@ -3,7 +3,8 @@ import copy
 import datetime
 
 import mock
-import pytest
+import elastalert
+from datetime import datetime as dt
 
 from elastalert.ruletypes import AnyRule
 from elastalert.ruletypes import BaseAggregationRule
@@ -23,6 +24,7 @@ from elastalert.util import dt_to_ts
 from elastalert.util import EAException
 from elastalert.util import ts_now
 from elastalert.util import ts_to_dt
+from tests.conftest import mock_es_client
 
 
 def hits(size, **kwargs):
@@ -1160,8 +1162,99 @@ def test_metric_aggregation():
     rule.check_matches(datetime.datetime.now(), 'qk_val', {'cpu_pct_avg': {'value': 0.95}})
     assert rule.matches[0]['qk'] == 'qk_val'
 
+def _mock_response(
+            status=200,
+            content='{"test": "test"}',
+            json_data=None,
+            raise_for_status= None):
+      
+    mock_resp = mock.Mock()
+    # mock raise_for_status call w/optional error
+    mock_resp.raise_for_status = mock.Mock()
+    if raise_for_status:
+        mock_resp.raise_for_status.side_effect = raise_for_status
+    # set status code and content
+    mock_resp.status_code = status
+    mock_resp.content = content
+    # add json data if provided
+    if json_data:
+        mock_resp.json = mock.Mock(return_value=json_data)
+    return mock_resp
 
-def test_error_rate():
+def get_error_rate_tester(total_count= 5,error_count= 10, count_all_errors=True):
+    #testing elastalert function that hits query_endpoint and gets aggregation data
+    rules = [{'es_host': '',
+              'es_port': 14900,
+              'name': 'error rate',
+              'index': 'idx',
+              'filter': [],
+              'include': ['@timestamp'],
+              'aggregation': datetime.timedelta(0),
+              'realert': datetime.timedelta(0),
+              'processed_hits': {},
+              'timestamp_field': '@timestamp',
+              'match_enhancements': [],
+              'rule_file': 'blah.yaml',
+              'max_query_size': 10000,
+              'ts_to_dt': ts_to_dt,
+              'dt_to_ts': dt_to_ts,
+              '_source_enabled': True,
+              'buffer_time': datetime.timedelta(minutes=5),
+              'sampling' : 100,
+              'threshold': 0.5,
+              'error_condition': 'exception.message: *',
+              'timestamp_field':'timestamp',
+              'type':'error_rate',
+              'total_agg_type': 'uniq',
+              'total_agg_key': 'traceID',
+              'count_all_errors': count_all_errors
+              }]
+
+    conf = {'rules_folder': 'rules',
+            'run_every': datetime.timedelta(minutes=10),
+            'buffer_time': datetime.timedelta(minutes=5),
+            'alert_time_limit': datetime.timedelta(hours=24),
+            'es_host': 'es',
+            'es_port': 14900,
+            'writeback_index': 'wb',
+            'rules': rules,
+            'max_query_size': 10000,
+            'old_query_limit': datetime.timedelta(weeks=1),
+            'disable_rules_on_error': False,
+            'scroll_keepalive': '30s',
+            'query_endpoint':'https://query-endpoint.fw/traces'}
+
+    elastalert.elastalert.elasticsearch_client = mock_es_client
+    with mock.patch('elastalert.elastalert.get_rule_hashes'):
+        with mock.patch('elastalert.elastalert.load_rules') as load_conf:
+            load_conf.return_value = conf
+            ea = elastalert.elastalert.ElastAlerter(['--pin_rules'])
+            ts = dt.now()
+            mock_responses = [
+                _mock_response(content = '{"data":[{"uniq(traceID)":'+ str(total_count)+'}],"rows":[] }'),
+                _mock_response(content = '{"data":[{"count()":'+ str(error_count)+'}],"rows":[] }')
+            ]
+
+            if(not count_all_errors):
+                mock_responses[1] = _mock_response(content = '{"data":[{"uniq(traceID)":'+ str(error_count)+'}],"rows":[] }')
+
+            with mock.patch('requests.post') as mock_post:
+                mock_post.side_effect = mock_responses
+                ea.get_error_rate(ea.rules[0],ts,ts)
+                calls =  mock_post.call_args_list
+                assert calls[0][0][0] == conf['query_endpoint'] 
+                assert calls[0][1]['json']['aggregations'] == [{'function': 'UNIQ', 'field': 'traceID'}]
+                assert calls[1][0][0] == conf['query_endpoint'] 
+                if count_all_errors:
+                    assert calls[1][1]['json']['aggregations'] == [{'function': 'COUNT', 'field': '1'}]
+                else:
+                    assert calls[1][1]['json']['aggregations'] == [{'function': 'UNIQ', 'field': 'traceID'}]
+                assert calls[1][1]['json']['freshquery'] == rules[0]['error_condition']
+
+                
+
+
+def test_error_rate_rule():
     rules = {
                 'buffer_time': datetime.timedelta(minutes=5),
                 'sampling' : 100,
@@ -1170,7 +1263,6 @@ def test_error_rate():
                 'timestamp_field':'timestamp'
              }
 
-    rule = ErrorRateRule(rules)
 
     #testing default initialization baesd on error_calculation_method method
 
@@ -1218,6 +1310,13 @@ def test_error_rate():
     payload[timestamp]['error_count'] = 8
     rule.calculate_err_rate(payload)
     assert len(rule.matches) == 2
+
+    get_error_rate_tester(count_all_errors= True)
+    get_error_rate_tester(count_all_errors= False)
+
+
+   
+
 
 
 def test_metric_aggregation_complex_query_key():

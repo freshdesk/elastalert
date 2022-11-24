@@ -42,11 +42,11 @@ num_events: 1
 timeframe:
   minutes: 2
 
-timestamp_field: timestamp
-timestamp_type: 'unix'
+# timestamp_field: timestamp
+# timestamp_type: 'unix'
 
-use_count_query: true
-doc_type: _doc
+# use_count_query: true
+# doc_type: _doc
 
 # (Required)
 # A list of Elasticsearch filters used for find events

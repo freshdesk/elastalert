@@ -38,12 +38,12 @@ num_events: 1
 # (Required, frequency specific)
 # num_events must occur within this amount of time to trigger an alert
 timeframe:
-  hours: 24
+  hours: 10
 
 use_count_query: true
 doc_type: _doc
 
-# timestamp_field: timestamp
+timestamp_field: "@timestamp"
 # timestamp_type: 'unix'
 
 # (Required)

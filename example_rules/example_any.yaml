@@ -2,19 +2,19 @@ name: "Heartbeat flatline Example Alert"
 type: any
 index: traces
 
-timestamp_field: timestamp
-timestamp_type: 'unix'
+# timestamp_field: timestamp
+# timestamp_type: 'unix'
 
 filter:
 - query:
     query_string:
-      query: "serviceName: 'SRE_freshcaller_cpaas1'"
+      query: "serviceName: 'SRE_freshcaller_cpaas'"
 
 aggregation:
   minutes: 1
 
-realert:
-  minutes: 0
+# realert:
+#   minutes: 0
 
 alert: 
   - "debug"

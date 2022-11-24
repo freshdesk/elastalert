@@ -5,10 +5,10 @@ index: "traces"
 threshold: 10
 
 timeframe:
-  hours: 12
+  hours: 24
 
-timestamp_field: timestamp
-timestamp_type: 'unix'
+# timestamp_field: timestamp
+# timestamp_type: 'unix'
 
 filter:
 - query:

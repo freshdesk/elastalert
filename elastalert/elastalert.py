@@ -539,16 +539,42 @@ class ElastAlerter():
         return {endtime: buckets}
 
     def get_hits_aggregation(self, rule, starttime, endtime, index, query_key, term_size=None):
-        agg_key = '{}({})'.format(rule['metric_agg_type'],rule['metric_agg_key'])
-        query = self.get_query_string(rule)
-        aggregation = {"function": rule['metric_agg_type'].upper(), "field": rule['metric_agg_key']}
-        data, count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
-        
-        if data is None:
+        rule_filter = copy.copy(rule['filter'])
+        base_query = self.get_query(
+            rule_filter,
+            starttime,
+            endtime,
+            timestamp_field=rule['timestamp_field'],
+            sort=False,
+            to_ts_func=rule['dt_to_ts'],
+            five=rule['five']
+        )
+        if term_size is None:
+            term_size = rule.get('terms_size', 50)
+        query = self.get_aggregation_query(base_query, rule, query_key, term_size, rule['timestamp_field'])
+        try:
+            if not rule['five']:
+                res = self.current_es.search(
+                    index=index,
+                    doc_type=rule.get('doc_type'),
+                    body=query,
+                    search_type='count',
+                    ignore_unavailable=True
+                )
+            else:
+                res = self.current_es.search(index=index, doc_type=rule.get('doc_type'), body=query, size=0, ignore_unavailable=True)
+        except ElasticsearchException as e:
+            if len(str(e)) > 1024:
+                e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
+            self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
+            return None
+        if 'aggregations' not in res:
             return {}
-        payload = {rule['metric_agg_key']+"_"+rule['metric_agg_type']: {'value': data}}
-
-        self.num_hits += count
+        if not rule['five']:
+            payload = res['aggregations']['filtered']
+        else:
+            payload = res['aggregations']
+        self.num_hits += res['hits']['total']
         return {endtime: payload}
 
     def get_error_rate(self, rule, starttime, endtime):

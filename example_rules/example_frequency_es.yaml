@@ -16,7 +16,7 @@
 #es_password: somepassword
 
 kibana_adapter: localhost
-kibana_adapter_port: 9999
+kibana_adapter_port: 9200
 
 # (Required)
 # Rule name, must be unique
@@ -29,9 +29,7 @@ type: frequency
 
 # (Required)
 # Index to search, wildcard supported
-index: traces
-# index: spans
-
+index: logstash*
 
 # (Required, frequency specific)
 # Alert when this many documents matching the query occur within a timeframe
@@ -40,13 +38,13 @@ num_events: 1
 # (Required, frequency specific)
 # num_events must occur within this amount of time to trigger an alert
 timeframe:
-  minutes: 2
+  hours: 10
 
-# timestamp_field: timestamp
+use_count_query: true
+doc_type: _doc
+
+timestamp_field: "@timestamp"
 # timestamp_type: 'unix'
-
-# use_count_query: true
-# doc_type: _doc
 
 # (Required)
 # A list of Elasticsearch filters used for find events
@@ -55,8 +53,7 @@ timeframe:
 filter:
 - query:
     query_string:
-      query: "serviceName: 'SRE_freshcaller_cpaas'"
-      # query: "serviceName: *"
+      query: "response: '200'"
 
 # (Required)
 # The alert is use when a match is found

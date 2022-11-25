@@ -1,0 +1,31 @@
+name: Example Error Rate
+type: error_rate
+
+buffer_time:
+  hours: 1
+
+index: dummy
+  
+sampling : 100
+threshold: 0.1
+unique_column: traceID
+error_condition: "operationName: EVALSHA"
+
+realert:
+  minutes: 0
+
+# This method can either be 'count_all_errors' or 'count_traces_with_errors'.
+# default is 'count_all_errors'
+error_calculation_method: 'count_all_errors'
+
+filter:
+- query:
+    query_string:
+      query: "serviceName: 'SRE_freshcaller_cpaas'"
+    
+
+# (Required)
+# The alert is use when a match is found
+alert:
+- "debug"
+

@@ -1,0 +1,18 @@
+name: "Heartbeat flatline Example Alert"
+type: any
+index: logstash*
+
+kibana_adapter: localhost
+kibana_adapter_port: 9200
+
+filter:
+- query:
+    query_string:
+      query: "response: '200'"
+
+aggregation:
+  hours: 24
+
+alert: 
+  - "debug"
+

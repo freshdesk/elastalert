@@ -1,20 +1,22 @@
 name: Metricbeat CPU Spike Rule
 type: metric_aggregation
 
-#es_host: localhost
-#es_port: 9200
+es_host: localhost
+es_port: 9200
 
 # index: traces
-index: traces*
-
+index: logstash*
 
 buffer_time:
   days: 1
 
-metric_agg_key: duration
-metric_agg_type: max
-query_key: serviceName
+metric_agg_key: response
+metric_agg_type: count
+query_key: agent
 doc_type: _doc
+
+# timestamp_field: "@timestamp"
+
   
   
 # sync_bucket_interval: true
@@ -27,7 +29,7 @@ max_threshold: 20000
 filter:
 - query:
     query_string:
-      query: "serviceName: 'SRE_freshcaller_cpaas'"
+      query: "response: '200'"
     
 
 # (Required)

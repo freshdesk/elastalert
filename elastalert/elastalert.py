@@ -226,6 +226,7 @@ class ElastAlerter():
 
     @staticmethod
     def get_msearch_query(query, rule):
+        
         search_arr = []
         search_arr.append({'index': [rule['index']]})
         if rule.get('use_count_query'):
@@ -237,6 +238,8 @@ class ElastAlerter():
         request = ''
         for each in search_arr:
             request += '%s \n' %json.dumps(each)
+        print(request)
+        print("query ends")
         return request
 
     @staticmethod
@@ -552,17 +555,10 @@ class ElastAlerter():
         if term_size is None:
             term_size = rule.get('terms_size', 50)
         query = self.get_aggregation_query(base_query, rule, query_key, term_size, rule['timestamp_field'])
+        request = self.get_msearch_query(query,rule)
         try:
-            if not rule['five']:
-                res = self.current_es.search(
-                    index=index,
-                    doc_type=rule.get('doc_type'),
-                    body=query,
-                    search_type='count',
-                    ignore_unavailable=True
-                )
-            else:
-                res = self.current_es.search(index=index, doc_type=rule.get('doc_type'), body=query, size=0, ignore_unavailable=True)
+            res = self.current_es.msearch(body=request)
+            res = res['responses'][0]
         except ElasticsearchException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)

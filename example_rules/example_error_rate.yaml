@@ -9,7 +9,7 @@ index: dummy
 sampling : 100
 threshold: 0.1
 unique_column: traceID
-error_condition: "exception.message: *"
+error_condition: "operationName: EVALSHA"
 
 realert:
   minutes: 0
@@ -21,7 +21,7 @@ error_calculation_method: 'count_all_errors'
 filter:
 - query:
     query_string:
-      query: "serviceName: 'search-service'"
+      query: "serviceName: 'SRE_freshcaller_cpaas'"
     
 
 # (Required)

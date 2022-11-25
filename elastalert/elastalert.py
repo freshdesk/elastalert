@@ -226,7 +226,6 @@ class ElastAlerter():
 
     @staticmethod
     def get_msearch_query(query, rule):
-        
         search_arr = []
         search_arr.append({'index': [rule['index']]})
         if rule.get('use_count_query'):
@@ -238,8 +237,6 @@ class ElastAlerter():
         request = ''
         for each in search_arr:
             request += '%s \n' %json.dumps(each)
-        print(request)
-        print("query ends")
         return request
 
     @staticmethod

@@ -578,7 +578,6 @@ class ElastAlerter():
         
         total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
-        elastalert_logger.info("total data is %s" % (total_data))
         if total_data is None:
             return {}
         
@@ -592,7 +591,6 @@ class ElastAlerter():
 
         error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
-        elastalert_logger.info("error data is %s" % (error_data))
         if error_data is None:
             return {}
 
@@ -619,7 +617,6 @@ class ElastAlerter():
                     "aggregations":[aggregation]
                 }
         try:
-            elastalert_logger.info("request data is %s" % json.dumps(data))
             res = requests.post(self.query_endpoint, json=data)
             res.raise_for_status()
         except requests.exceptions.RequestException as e:

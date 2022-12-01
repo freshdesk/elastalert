@@ -605,7 +605,6 @@ class ElastAlerter():
         return ""
 
     def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery,aggregation):
-        elastalert_logger.info("query start timestamp and end timestamp %s at %s" % (dt_to_ts(starttime), dt_to_ts(endtime)))
         data = {
                     "selects":[],
                     "start_time":dt_to_ts_with_format(starttime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',

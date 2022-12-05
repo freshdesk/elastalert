@@ -503,8 +503,8 @@ class ElastAlerter():
 
         base_query = self.get_query(
             rule_filter,
-            starttime,
-            endtime,
+            dt_to_ts_with_format(starttime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
+            dt_to_ts_with_format(endtime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
             timestamp_field=rule['timestamp_field'],
             sort=False,
             to_ts_func=rule['dt_to_ts'],
@@ -575,19 +575,21 @@ class ElastAlerter():
         agg_key = '{}({})'.format(rule['total_agg_type'],rule['total_agg_key'])
         query = self.get_query_string(rule)
         aggregation = {"function": rule['total_agg_type'].upper(), "field": rule['total_agg_key']}
-        
+
         total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
         if total_data is None:
             return {}
         
-        agg_key = "count()"
         if(query):
             query = '{} AND {}'.format(query,rule['error_condition'])
         else:
             query = rule['error_condition']
 
-        aggregation = {"function": "COUNT", "field": "1"}
+        if rule['count_all_errors']:
+            agg_key = "count()"
+            aggregation = {"function": "COUNT", "field": "1"}
+
 
         error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
@@ -595,8 +597,8 @@ class ElastAlerter():
             return {}
 
         payload = {'error_count': error_data, 'total_count': total_data, 'start_time': starttime, 'end_time': endtime}
-        self.num_hits += int(total_count)
-
+        self.num_hits += int(error_data)
+        
         return {endtime: payload}
 
     def get_query_string(self, rule):
@@ -612,7 +614,6 @@ class ElastAlerter():
                     "freshquery": freshquery,
                     "group_bys":[],
                     "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
-                    "limit":"500",
                     "aggregations":[aggregation]
                 }
         try:
@@ -624,7 +625,10 @@ class ElastAlerter():
             self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
             return None,0
         res = json.loads(res.content)
-        return res['data'][0][agg_key], res['rows']
+        return int(res['data'][0][agg_key]), res['rows']
+        elastalert_logger.info("request data is %s" % json.dumps(data))
+        # res = requests.post(self.query_endpoint, json=data)
+        # return None, None
 
     def remove_duplicate_events(self, data, rule):
         new_events = []

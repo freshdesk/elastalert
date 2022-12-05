@@ -1021,22 +1021,19 @@ class BaseAggregationRule(RuleType):
 
 class ErrorRateRule(BaseAggregationRule):
     """ A rule that determines error rate with sampling rate"""
-    required_options = frozenset(['sampling', 'threshold', 'unique_column'])
+    required_options = frozenset(['sampling', 'threshold','error_condition'])
     def __init__(self, *args):
         super(ErrorRateRule, self).__init__(*args)
         self.ts_field = self.rules.get('timestamp_field', '@timestamp')
-        self.rules['total_agg_key'] = self.rules['unique_column']
+        self.rules['total_agg_key'] = 'traceID'
+        
+        self.rules['count_all_errors'] = True
+
+        if (self.rules.has_key('error_calculation_method') and self.rules['error_calculation_method']=='count_traces_with_errors' ):
+            self.rules['count_all_errors'] = False
+        
         # hardcoding uniq aggregation for total count
         self.rules['total_agg_type'] = "uniq"
-
-        self.rules['aggregation_query_element'] = self.generate_aggregation_query()
-
-    def get_match_str(self, match):
-        message = 'Threshold violation, error rate is %s' % (match['error_rate'])
-        return message
-
-    def generate_aggregation_query(self):
-        return {"function": self.rules['total_agg_type'].upper(), "field": self.rules['total_agg_key']}
         
     def calculate_err_rate(self,payload):
         for timestamp, payload_data in payload.iteritems():

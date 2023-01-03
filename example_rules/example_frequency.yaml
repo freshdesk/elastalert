@@ -42,7 +42,7 @@ num_events: 1
 timeframe:
   minutes: 2
 
-# timestamp_field: timestamp
+timestamp_field: timestamp
 # timestamp_type: 'unix'
 
 # use_count_query: true

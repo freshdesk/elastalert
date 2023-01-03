@@ -5,7 +5,7 @@ rules_folder: example_rules
 # How often ElastAlert will query Elasticsearch
 # The unit can be anything from weeks to seconds
 run_every:
-  minutes: 1
+  hours: 12
 
 # ElastAlert will buffer results from the most recent
 # period of time, in case some log sources are not in real time
@@ -17,7 +17,11 @@ buffer_time:
 es_host: localhost
 
 # The Elasticsearch port
-es_port: 9200
+es_port: 9999
+
+kibana_adapter: localhost
+kibana_adapter_port: 9999
+kibana_adapter_url_prefix: /alerts
 
 # The AWS region to use. Set this when using AWS-managed elasticsearch
 #aws_region: us-east-1
@@ -63,4 +67,4 @@ writeback_index: elastalert_status
 alert_time_limit:
   days: 2
 
-query_endpoint: https://localhost:8080
+query_endpoint: https://localhost:9999/v2/sherlock/traces/visualize

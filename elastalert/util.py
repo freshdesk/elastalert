@@ -387,6 +387,10 @@ def build_adapter_conn_config(conf):
     if 'es_url_prefix' in conf:
         parsed_conf['es_url_prefix'] = conf['es_url_prefix']
 
+    if 'kibana_adapter_url_prefix' in conf:
+        parsed_conf['es_url_prefix'] = conf['kibana_adapter_url_prefix']
+  
+
     return parsed_conf
 
 

@@ -318,7 +318,7 @@ def kibana_adapter_client(conf):
 
     return Elasticsearch(host=es_conn_conf['es_host'],
                          port=es_conn_conf['es_port'],
-                         url_prefix=es_conn_conf['es_url_prefix'],
+                         url_prefix=es_conn_conf['kibana_adapter_url_prefix'],
                          use_ssl=es_conn_conf['use_ssl'],
                          verify_certs=es_conn_conf['verify_certs'],
                          ca_certs=es_conn_conf['ca_certs'],
@@ -347,7 +347,7 @@ def build_adapter_conn_config(conf):
     parsed_conf['profile'] = None
     parsed_conf['es_host'] = conf['kibana_adapter']
     parsed_conf['es_port'] = conf['kibana_adapter_port']
-    parsed_conf['es_url_prefix'] = ''
+    
     parsed_conf['es_conn_timeout'] = conf.get('es_conn_timeout', 20)
     parsed_conf['send_get_body_as'] = conf.get('es_send_get_body_as', 'GET')
 
@@ -386,6 +386,11 @@ def build_adapter_conn_config(conf):
 
     if 'es_url_prefix' in conf:
         parsed_conf['es_url_prefix'] = conf['es_url_prefix']
+
+    if 'kibana_adapter_url_prefix' in conf:
+        parsed_conf['kibana_adapter_url_prefix'] = conf['kibana_adapter_url_prefix']
+    else:
+        parsed_conf['kibana_adapter_url_prefix'] = '/alerts'
 
     return parsed_conf
 

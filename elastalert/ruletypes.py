@@ -1021,12 +1021,13 @@ class BaseAggregationRule(RuleType):
 
 class ErrorRateRule(BaseAggregationRule):
     """ A rule that determines error rate with sampling rate"""
-    required_options = frozenset(['sampling', 'threshold','error_condition'])
+    required_options = frozenset(['sampling', 'threshold'])
     def __init__(self, *args):
         super(ErrorRateRule, self).__init__(*args)
         self.ts_field = self.rules.get('timestamp_field', '@timestamp')
+        self.rules['index'] = 'traces*'
         self.rules['total_agg_key'] = 'traceID'
-        
+        self.rules['error_condition'] = 'exception.type:*'
         self.rules['count_all_errors'] = True
 
         if (self.rules.has_key('error_calculation_method') and self.rules['error_calculation_method']=='count_traces_with_errors' ):

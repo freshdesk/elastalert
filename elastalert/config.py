@@ -30,7 +30,7 @@ rule_schema = jsonschema.Draft4Validator(yaml.load(open(os.path.join(os.path.dir
 
 # Required global (config.yaml) and local (rule.yaml)  configuration options
 required_globals = frozenset(['run_every', 'rules_folder', 'es_host', 'es_port', 'writeback_index', 'buffer_time'])
-required_locals = frozenset(['alert', 'type', 'name', 'index'])
+required_locals = frozenset(['alert', 'type', 'name'])
 
 # Settings that can be derived from ENV variables
 env_settings = {'ES_USE_SSL': 'use_ssl',
@@ -215,6 +215,7 @@ def load_options(rule, conf, filename, args=None):
     rule.setdefault('_source_enabled', True)
     rule.setdefault('use_local_time', True)
     rule.setdefault('description', "")
+    rule.setdefault('index',"traces*")
 
     # Set timestamp_type conversion function, used when generating queries and processing hits
     rule['timestamp_type'] = rule['timestamp_type'].strip().lower()

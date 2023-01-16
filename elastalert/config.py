@@ -265,6 +265,10 @@ def load_options(rule, conf, filename, args=None):
     if 'include' in rule and type(rule['include']) != list:
         raise EAException('include option must be a list')
 
+    if (rule['type'] == 'error_rate'):
+        rule.setdefault('error_condition','exception.type:*')
+        rule.setdefault('unique_column','traceID')
+
     if isinstance(rule.get('query_key'), list):
         rule['compound_query_key'] = rule['query_key']
         rule['query_key'] = ','.join(rule['query_key'])

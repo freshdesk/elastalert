@@ -25,7 +25,7 @@ definitions:
 
   filter: &filter {}
 
-required: [type, index, alert]
+required: [type, alert]
 type: object
 
 ### Rule Types section

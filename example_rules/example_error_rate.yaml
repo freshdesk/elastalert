@@ -4,12 +4,12 @@ type: error_rate
 buffer_time:
   hours: 1
 
-index: dummy
+# index: dummy
   
 sampling : 100
 threshold: 0.1
-unique_column: traceID
-error_condition: "operationName: EVALSHA"
+# unique_column: traceID
+# error_condition: "operationName: EVALSHA"
 
 realert:
   minutes: 0

@@ -1,5 +1,31 @@
 # Change Log
 
+
+
+# v0.1.35_base
+
+### Enhancements
+- Fixing engine to use msearch query for es searches.
+- Error rate rule enhancements 
+    - error_calculation_method config for users to decide between two different error rate calculation methods.
+    -default values for unique_column and error_condition
+    -Improved test cases
+- Docker setup for image building
+- Fixing Metric Aggregation rule to query es endpoint directly.
+- Added url_prefix for kibana adapter 
+- Common index can be configured directly in config.yaml
+
+# v0.1.35_prebase
+
+### Added
+- Added alertmanager support
+- Added Kibana adapter support for querying from router (Haystack specific)
+- Added Error Rate rule that hits router aggregagte endpoint (Haystack specific)
+- Added prometheus metrics
+
+### Modified
+- Modified metric aggregation rule to work with aggregate endpoint (Haystack specific)
+
 # v0.1.35
 
 ### Fixed

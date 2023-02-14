@@ -1,8 +1,13 @@
-coverage
+-r requirements.txt
 flake8
+flake8-absolute-import
+m2r2
 pre-commit
-pylint<1.4
-pytest<3.3.0
+pylint==2.15.5
+pytest==7.2.0
+pytest-cov==4.0.0
+pytest-xdist==3.0.2
 setuptools
+sphinx==5.3.0
 sphinx_rtd_theme
-tox<2.0
+tox==3.27.0

@@ -2,15 +2,18 @@
 import copy
 import datetime
 
-import mock
-import elastalert
-from datetime import datetime as dt
+# import mock
+# import elastalert
+# from datetime import datetime as dt
+from unittest import mock
+import pytest
 
 from elastalert.ruletypes import AnyRule
 from elastalert.ruletypes import BaseAggregationRule
 from elastalert.ruletypes import BlacklistRule
 from elastalert.ruletypes import CardinalityRule
 from elastalert.ruletypes import ChangeRule
+from elastalert.ruletypes import CompareRule
 from elastalert.ruletypes import EventWindow
 from elastalert.ruletypes import FlatlineRule
 from elastalert.ruletypes import FrequencyRule
@@ -18,6 +21,7 @@ from elastalert.ruletypes import MetricAggregationRule
 from elastalert.ruletypes import ErrorRateRule
 from elastalert.ruletypes import NewTermsRule
 from elastalert.ruletypes import PercentageMatchRule
+from elastalert.ruletypes import RuleType
 from elastalert.ruletypes import SpikeRule
 from elastalert.ruletypes import WhitelistRule
 from elastalert.util import dt_to_ts
@@ -134,6 +138,13 @@ def test_freq_count():
     assert len(rule.matches) == 0
     rule.add_count_data({ts_to_dt('2014-10-10T01:00:00'): 75})
     assert len(rule.matches) == 1
+
+    # except EAException
+    try:
+        rule = FrequencyRule(rules)
+        rule.add_count_data('aaaa')
+    except EAException as ea:
+        assert 'add_count_data can only accept one count at a time' in str(ea)
 
 
 def test_freq_out_of_order():
@@ -550,7 +561,12 @@ def test_change():
     assert rule.matches == []
 
 
-def test_new_term():
+@pytest.mark.parametrize('version', [
+    ({'version': {'number': '7.x.x'}}, True),
+    ({'version': {'number': '1.2.0', 'distribution': 'opensearch'}}, True),
+    ({'version': {'number': '2.0.0', 'distribution': 'opensearch'}}, True),
+])
+def test_new_term(version):
     rules = {'fields': ['a', 'b'],
              'timestamp_field': '@timestamp',
              'es_host': 'example.com', 'es_port': 10, 'index': 'logstash',
@@ -561,7 +577,7 @@ def test_new_term():
     with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
         mock_es.return_value = mock.Mock()
         mock_es.return_value.search.return_value = mock_res
-        mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+        mock_es.return_value.info.return_value = version
         call_args = []
 
         # search is called with a mutable dict containing timestamps, this is required to test
@@ -613,7 +629,7 @@ def test_new_term():
     with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
         mock_es.return_value = mock.Mock()
         mock_es.return_value.search.return_value = mock_res
-        mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+        mock_es.return_value.info.return_value = version
         rule = NewTermsRule(rules)
     rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
     assert len(rule.matches) == 1
@@ -1141,7 +1157,7 @@ def test_metric_aggregation():
 
     rule = MetricAggregationRule(rules)
 
-    assert rule.rules['aggregation_query_element'] == {'cpu_pct_avg': {'avg': {'field': 'cpu_pct'}}}
+    assert rule.rules['aggregation_query_element'] == {'metric_cpu_pct_avg': {'avg': {'field': 'cpu_pct'}}}
 
     assert rule.crossed_thresholds(None) is False
     assert rule.crossed_thresholds(0.09) is True
@@ -1149,18 +1165,205 @@ def test_metric_aggregation():
     assert rule.crossed_thresholds(0.79) is False
     assert rule.crossed_thresholds(0.81) is True
 
-    rule.check_matches(datetime.datetime.now(), None, {'cpu_pct_avg': {'value': None}})
-    rule.check_matches(datetime.datetime.now(), None, {'cpu_pct_avg': {'value': 0.5}})
+    rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': None}})
+    rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': 0.5}})
     assert len(rule.matches) == 0
 
-    rule.check_matches(datetime.datetime.now(), None, {'cpu_pct_avg': {'value': 0.05}})
-    rule.check_matches(datetime.datetime.now(), None, {'cpu_pct_avg': {'value': 0.95}})
+    rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': 0.05}})
+    rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': 0.95}})
     assert len(rule.matches) == 2
 
-    rules['query_key'] = 'qk'
     rule = MetricAggregationRule(rules)
-    rule.check_matches(datetime.datetime.now(), 'qk_val', {'cpu_pct_avg': {'value': 0.95}})
-    assert rule.matches[0]['qk'] == 'qk_val'
+    rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': 0.966666667}})
+    assert '0.966666667' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['metric_cpu_pct_avg'] == 0.966666667
+    assert rule.matches[0]['metric_agg_value'] == 0.966666667
+    assert 'metric_cpu_pct_avg_formatted' not in rule.matches[0]
+    assert 'metric_agg_value_formatted' not in rule.matches[0]
+
+    rules['metric_format_string'] = '{:.2%}'
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': 0.966666667}})
+    assert '96.67%' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['metric_cpu_pct_avg'] == 0.966666667
+    assert rule.matches[0]['metric_agg_value'] == 0.966666667
+    assert rule.matches[0]['metric_cpu_pct_avg_formatted'] == '96.67%'
+    assert rule.matches[0]['metric_agg_value_formatted'] == '96.67%'
+
+    rules['metric_format_string'] = '%.2f'
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': 0.966666667}})
+    assert '0.97' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['metric_cpu_pct_avg'] == 0.966666667
+    assert rule.matches[0]['metric_agg_value'] == 0.966666667
+    assert rule.matches[0]['metric_cpu_pct_avg_formatted'] == '0.97'
+    assert rule.matches[0]['metric_agg_value_formatted'] == '0.97'
+
+    rules['query_key'] = 'subdict'
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), 'qk_val', {'metric_cpu_pct_avg': {'value': 0.95}})
+    assert rule.matches[0]['subdict'] == 'qk_val'
+
+    rules['query_key'] = 'subdict1.subdict2.subdict3'
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), 'qk_val', {'metric_cpu_pct_avg': {'value': 0.95}})
+    assert rule.matches[0]['subdict1']['subdict2']['subdict3'] == 'qk_val'
+
+def _mock_response(
+            status=200,
+            content='{"test": "test"}',
+            json_data=None,
+            raise_for_status= None):
+      
+    mock_resp = mock.Mock()
+    # mock raise_for_status call w/optional error
+    mock_resp.raise_for_status = mock.Mock()
+    if raise_for_status:
+        mock_resp.raise_for_status.side_effect = raise_for_status
+    # set status code and content
+    mock_resp.status_code = status
+    mock_resp.content = content
+    # add json data if provided
+    if json_data:
+        mock_resp.json = mock.Mock(return_value=json_data)
+    return mock_resp
+
+def get_error_rate_tester(total_count= 5,error_count= 10, count_all_errors=True):
+    #testing elastalert function that hits query_endpoint and gets aggregation data
+    rules = [{'es_host': '',
+              'es_port': 14900,
+              'name': 'error rate',
+              'index': 'idx',
+              'filter': [],
+              'include': ['@timestamp'],
+              'aggregation': datetime.timedelta(0),
+              'realert': datetime.timedelta(0),
+              'processed_hits': {},
+              'timestamp_field': '@timestamp',
+              'match_enhancements': [],
+              'rule_file': 'blah.yaml',
+              'max_query_size': 10000,
+              'ts_to_dt': ts_to_dt,
+              'dt_to_ts': dt_to_ts,
+              '_source_enabled': True,
+              'buffer_time': datetime.timedelta(minutes=5),
+              'sampling' : 100,
+              'threshold': 0.5,
+              'error_condition': 'exception.message: *',
+              'timestamp_field':'timestamp',
+              'type':'error_rate',
+              'total_agg_type': 'uniq',
+              'total_agg_key': 'traceID',
+              'count_all_errors': count_all_errors
+              }]
+
+    conf = {'rules_folder': 'rules',
+            'run_every': datetime.timedelta(minutes=10),
+            'buffer_time': datetime.timedelta(minutes=5),
+            'alert_time_limit': datetime.timedelta(hours=24),
+            'es_host': 'es',
+            'es_port': 14900,
+            'writeback_index': 'wb',
+            'rules': rules,
+            'max_query_size': 10000,
+            'old_query_limit': datetime.timedelta(weeks=1),
+            'disable_rules_on_error': False,
+            'scroll_keepalive': '30s',
+            'query_endpoint':'https://query-endpoint.fw/traces'}
+
+    elastalert.elastalert.elasticsearch_client = mock_es_client
+    with mock.patch('elastalert.elastalert.get_rule_hashes'):
+        with mock.patch('elastalert.elastalert.load_rules') as load_conf:
+            load_conf.return_value = conf
+            ea = elastalert.elastalert.ElastAlerter(['--pin_rules'])
+            ts = dt.now()
+            mock_responses = [
+                _mock_response(content = '{"data":[{"uniq(traceID)":'+ str(total_count)+'}],"rows":[] }'),
+                _mock_response(content = '{"data":[{"count()":'+ str(error_count)+'}],"rows":[] }')
+            ]
+
+            if(not count_all_errors):
+                mock_responses[1] = _mock_response(content = '{"data":[{"uniq(traceID)":'+ str(error_count)+'}],"rows":[] }')
+
+            with mock.patch('requests.post') as mock_post:
+                mock_post.side_effect = mock_responses
+                ea.get_error_rate(ea.rules[0],ts,ts)
+                calls =  mock_post.call_args_list
+                assert calls[0][0][0] == conf['query_endpoint'] 
+                assert calls[0][1]['json']['aggregations'] == [{'function': 'UNIQ', 'field': 'traceID'}]
+                assert calls[1][0][0] == conf['query_endpoint'] 
+                if count_all_errors:
+                    assert calls[1][1]['json']['aggregations'] == [{'function': 'COUNT', 'field': '1'}]
+                else:
+                    assert calls[1][1]['json']['aggregations'] == [{'function': 'UNIQ', 'field': 'traceID'}]
+                assert calls[1][1]['json']['freshquery'] == rules[0]['error_condition']
+
+                
+
+
+def test_error_rate_rule():
+    rules = {
+                'buffer_time': datetime.timedelta(minutes=5),
+                'sampling' : 100,
+                'threshold': 0.5,
+                'error_condition': "exception.message: *",
+                'timestamp_field':'timestamp'
+             }
+
+
+    #testing default initialization baesd on error_calculation_method method
+
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_all_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_all_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_traces_with_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == False
+
+    timestamp = ts_now() 
+
+    payload = {
+       timestamp : 
+       {
+        'total_count': 0, 
+        'start_time': timestamp, 
+        'error_count': 0, 
+        'end_time': timestamp
+        }
+    }
+
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 0
+    
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 6
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 1
+
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 4
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 1
+
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 8
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 2
+
+    get_error_rate_tester(count_all_errors= True)
+    get_error_rate_tester(count_all_errors= False)
+
+
+   
+
 
 def _mock_response(
             status=200,
@@ -1329,9 +1532,9 @@ def test_metric_aggregation_complex_query_key():
              'max_threshold': 0.8}
 
     query = {"bucket_aggs": {"buckets": [
-        {"cpu_pct_avg": {"value": 0.91}, "key": "sub_qk_val1"},
-        {"cpu_pct_avg": {"value": 0.95}, "key": "sub_qk_val2"},
-        {"cpu_pct_avg": {"value": 0.89}, "key": "sub_qk_val3"}]
+        {"metric_cpu_pct_avg": {"value": 0.91}, "key": "sub_qk_val1"},
+        {"metric_cpu_pct_avg": {"value": 0.95}, "key": "sub_qk_val2"},
+        {"metric_cpu_pct_avg": {"value": 0.89}, "key": "sub_qk_val3"}]
     }, "key": "qk_val"}
 
     rule = MetricAggregationRule(rules)
@@ -1341,6 +1544,57 @@ def test_metric_aggregation_complex_query_key():
     assert rule.matches[1]['qk'] == 'qk_val'
     assert rule.matches[0]['sub_qk'] == 'sub_qk_val1'
     assert rule.matches[1]['sub_qk'] == 'sub_qk_val2'
+
+
+def test_metric_aggregation_complex_query_key_bucket_interval():
+    rules = {'buffer_time': datetime.timedelta(minutes=5),
+             'timestamp_field': '@timestamp',
+             'metric_agg_type': 'avg',
+             'metric_agg_key': 'cpu_pct',
+             'bucket_interval': {'minutes': 1},
+             'bucket_interval_timedelta': datetime.timedelta(minutes=1),
+             'compound_query_key': ['qk', 'sub_qk'],
+             'query_key': 'qk,sub_qk',
+             'max_threshold': 0.8}
+
+    # Quoted from https://elastalert.readthedocs.io/en/latest/ruletypes.html#metric-aggregation
+    # bucket_interval: If present this will divide the metric calculation window into bucket_interval sized segments.
+    # The metric value will be calculated and evaluated against the threshold(s) for each segment.
+    interval_aggs = {"interval_aggs": {"buckets": [
+        {"metric_cpu_pct_avg": {"value": 0.91}, "key": "1617156690000"},
+        {"metric_cpu_pct_avg": {"value": 0.89}, "key": "1617156750000"},
+        {"metric_cpu_pct_avg": {"value": 0.78}, "key": "1617156810000"},
+        {"metric_cpu_pct_avg": {"value": 0.85}, "key": "1617156870000"},
+        {"metric_cpu_pct_avg": {"value": 0.86}, "key": "1617156930000"},
+    ]}, "key": "sub_qk_val1"}
+
+    query = {"bucket_aggs": {"buckets": [
+        interval_aggs
+    ]}, "key": "qk_val"}
+
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), 'qk_val', query)
+    assert len(rule.matches) == 4
+    assert rule.matches[0]['qk'] == 'qk_val'
+    assert rule.matches[1]['qk'] == 'qk_val'
+    assert rule.matches[0]['sub_qk'] == 'sub_qk_val1'
+    assert rule.matches[1]['sub_qk'] == 'sub_qk_val1'
+
+
+def test_metric_aggregation_scripted():
+    script_body = "doc['some_threshold'].value - doc['cpu_pct'].value"
+    rules = {'buffer_time': datetime.timedelta(minutes=5),
+             'timestamp_field': '@timestamp',
+             'metric_agg_type': 'avg',
+             'metric_agg_key': 'cpu_pct',
+             'metric_agg_script': {"script": script_body},
+             'min_threshold': 0.0}
+
+    rule = MetricAggregationRule(rules)
+    assert rule.rules['aggregation_query_element'] == {'metric_cpu_pct_avg': {'avg': {'script': script_body}}}
+
+    rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': -0.5}})
+    assert rule.matches[0]['metric_cpu_pct_avg'] == -0.5
 
 
 def test_percentage_match():
@@ -1390,10 +1644,76 @@ def test_percentage_match():
     rule.check_matches(datetime.datetime.now(), None, create_percentage_match_agg(76, 24))
     assert len(rule.matches) == 2
 
+    rule = PercentageMatchRule(rules)
+    rule.check_matches(datetime.datetime.now(), None, create_percentage_match_agg(76.666666667, 24))
+    assert '76.1589403974' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['percentage'] == 76.15894039742994
+    assert 'percentage_formatted' not in rule.matches[0]
+    rules['percentage_format_string'] = '{:.2f}'
+    rule = PercentageMatchRule(rules)
+    rule.check_matches(datetime.datetime.now(), None, create_percentage_match_agg(76.666666667, 24))
+    assert '76.16' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['percentage'] == 76.15894039742994
+    assert rule.matches[0]['percentage_formatted'] == '76.16'
+    rules['percentage_format_string'] = '%.2f'
+    rule = PercentageMatchRule(rules)
+    rule.check_matches(datetime.datetime.now(), None, create_percentage_match_agg(76.666666667, 24))
+    assert '76.16' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['percentage'] == 76.15894039742994
+    assert rule.matches[0]['percentage_formatted'] == '76.16'
+
     rules['query_key'] = 'qk'
     rule = PercentageMatchRule(rules)
     rule.check_matches(datetime.datetime.now(), 'qk_val', create_percentage_match_agg(76.666666667, 24))
     assert rule.matches[0]['qk'] == 'qk_val'
-    assert '76.1589403974' in rule.get_match_str(rule.matches[0])
-    rules['percentage_format_string'] = '%.2f'
-    assert '76.16' in rule.get_match_str(rule.matches[0])
+
+    rules['query_key'] = 'subdict1.subdict2'
+    rule = PercentageMatchRule(rules)
+    rule.check_matches(datetime.datetime.now(), 'qk_val', create_percentage_match_agg(76.666666667, 24))
+    assert rule.matches[0]['subdict1']['subdict2'] == 'qk_val'
+
+
+def test_ruletype_add_data():
+    try:
+        RuleType.garbage_collect('', '')
+        RuleType.add_data('', '')
+        assert False
+    except NotImplementedError:
+        assert True
+
+
+def test_ruletype_garbage_collect():
+    RuleType.garbage_collect('', '')
+    assert True
+
+
+def test_ruletype_add_count_data():
+    try:
+        RuleType.add_count_data('', '')
+        assert False
+    except NotImplementedError:
+        assert True
+
+
+def test_ruletype_add_terms_data():
+    try:
+        RuleType.add_terms_data('', '')
+        assert False
+    except NotImplementedError:
+        assert True
+
+
+def test_ruletype_add_aggregation_data():
+    try:
+        RuleType.add_aggregation_data('', '')
+        assert False
+    except NotImplementedError:
+        assert True
+
+
+def test_comparerule_compare():
+    try:
+        CompareRule.compare('', '')
+        assert False
+    except NotImplementedError:
+        assert True

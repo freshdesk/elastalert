@@ -56,22 +56,25 @@ Note that a term query may not behave as expected if a field is analyzed. By def
 a field that appears to have the value "foo bar", unless it is not analyzed. Conversely, a term query for "foo" will match analyzed strings "foo bar" and "foo baz". For full text
 matching on analyzed fields, use query_string. See https://www.elastic.co/guide/en/elasticsearch/guide/current/term-vs-full-text.html
 
-terms
-*****
+`terms <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-terms-query.html>`_
+*****************************************************************************************************
+
+
 
 Terms allows for easy combination of multiple term filters::
 
     filter:
     - terms:
-        field: ["value1", "value2"]
+        field: ["value1", "value2"] # value1 OR value2
 
-Using the minimum_should_match option, you can define a set of term filters of which a certain number must match::
+You can also match on multiple fields (All terms must match at least one of the given values)::
 
     - terms:
         fieldX: ["value1", "value2"]
+    - terms:
         fieldY: ["something", "something_else"]
+    - terms:
         fieldZ: ["foo", "bar", "baz"]
-        minimum_should_match: 2
 
 wildcard
 ********
@@ -97,52 +100,28 @@ For ranges on fields::
 Negation, and, or
 *****************
 
-Any of the filters can be embedded in ``not``, ``and``, and ``or``::
+Below is a more complex example for Elasticsearch 7.x, provided by a `community user. <https://github.com/jertel/elastalert2/discussions/330>`_::
 
     filter:
-    - or:
-        - term:
-            field: "value"
-        - wildcard:
-            field: "foo*bar"
-        - and:
-            - not:
-                term:
-                  field: "value"
-            - not:
-                term:
-                  _type: "something"
-
-
-Loading Filters Directly From Kibana 3
---------------------------------------
-
-There are two ways to load filters directly from a Kibana 3 dashboard. You can set your filter to::
-
-    filter:
-      download_dashboard: "My Dashboard Name"
-
-and when ElastAlert starts, it will download the dashboard schema from Elasticsearch and use the filters from that.
-However, if the dashboard name changes or if there is connectivity problems when ElastAlert starts, the rule will not load and
-ElastAlert will exit with an error like "Could not download filters for .."
-
-The second way is to generate a config file once using the Kibana dashboard. To do this, run ``elastalert-rule-from-kibana``.
-
-.. code-block:: console
-
-    $ elastalert-rule-from-kibana
-    Elasticsearch host: elasticsearch.example.com
-    Elasticsearch port: 14900
-    Dashboard name: My Dashboard
-
-    Partial Config file
-    -----------
-
-    name: My Dashboard
-    es_host: elasticsearch.example.com
-    es_port: 14900
-    filter:
-    - query:
-        query_string: {query: '_exists_:log.message'}
-    - query:
-        query_string: {query: 'some_field:12345'}
+    - term:
+        action: order
+    - terms:
+        dining:
+            - pickup
+            - delivery
+    - bool:
+        #exclude common/expected orders
+        must_not:
+            #Alice usually gets a pizza
+            - bool:
+                must: [ {term: {uid: alice}}, {term: {menu_item: pizza}} ]
+            #Bob loves his hoagies 
+            - bool:
+                must: [ {term: {uid: bob}}, {term: {menu_item: sandwich}} ]
+            #Charlie has a few favorites
+            - bool:
+                must:
+                   - term:
+                       uid: charlie
+                   - match:
+                       menu_item: "burrito pasta salad pizza"

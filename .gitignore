@@ -1,4 +1,4 @@
-config.yaml
+/config.yaml
 .tox/
 .coverage
 .idea/*
@@ -6,6 +6,7 @@ config.yaml
 __pycache__/
 *.pyc
 virtualenv_run/
+.venv
 *.egg-info/
 dist/
 venv/
@@ -16,3 +17,5 @@ build/
 my_rules
 *.swp
 *~
+/rules/
+mod/

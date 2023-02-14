@@ -2,7 +2,7 @@ import sphinx_rtd_theme
 
 # -*- coding: utf-8 -*-
 #
-# ElastAlert documentation build configuration file, created by
+# ElastAlert 2 documentation build configuration file, created by
 # sphinx-quickstart on Thu Jul 11 15:45:31 2013.
 #
 # This file is execfile()d with the current directory set to its containing dir.
@@ -19,13 +19,13 @@ import sphinx_rtd_theme
 # -- General configuration -----------------------------------------------------
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions = []
+extensions = ["m2r2"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
 # The suffix of source filenames.
-source_suffix = '.rst'
+source_suffix = ['.rst', '.md']
 
 # The encoding of source files.
 # source_encoding = 'utf-8'
@@ -34,8 +34,8 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'ElastAlert'
-copyright = u'2014, Yelp'
+project = u'ElastAlert 2'
+copyright = u'2014-2021, Yelp, et al'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -62,6 +62,7 @@ release = '0.0.1'
 # List of directories, relative to source directory, that shouldn't be searched
 # for source files.
 exclude_trees = []
+exclude_patterns = ['recipes/*.md']
 
 # The reST default role (used for this markup: `text`) to use for all documents.
 # default_role = None
@@ -170,7 +171,7 @@ htmlhelp_basename = 'elastalertdoc'
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-    ('index', 'elastalert.tex', u'ElastAlert Documentation',
+    ('index', 'elastalert.tex', u'ElastAlert 2 Documentation',
      u'Quentin Long', 'manual'),
 ]
 

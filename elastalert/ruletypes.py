@@ -231,6 +231,7 @@ class FrequencyRule(RuleType):
 
     def add_terms_data(self, terms):
         if 'nested_query_key' in self.rules and self.rules['nested_query_key'] == True:
+            elastalert_logger.warn(terms)
             for timestamp, buckets in terms.iteritems():
                 self.flatten_nested_aggregations(timestamp,buckets)
         else:
@@ -248,7 +249,7 @@ class FrequencyRule(RuleType):
             if key == None:
                 nestedkey = bucket['key']
             else:
-                nestedkey = key + ',' + bucket['key']
+                nestedkey = key + ',' + str(bucket['key'])
             if 'counts' in bucket:
                 self.flatten_nested_aggregations(timestamp,bucket['counts']['buckets'],nestedkey)
             else:

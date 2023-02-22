@@ -247,7 +247,7 @@ class FrequencyRule(RuleType):
     def flatten_nested_aggregations(self,timestamp,buckets,key=None):
         for bucket in buckets:
             if key == None:
-                nestedkey = bucket['key']
+                nestedkey = str(bucket['key'])
             else:
                 nestedkey = key + ',' + str(bucket['key'])
             if 'counts' in bucket:

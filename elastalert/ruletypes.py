@@ -3,6 +3,7 @@ import copy
 import datetime
 import sys
 import time
+import json
 
 from blist import sortedlist
 from util import add_raw_postfix
@@ -231,7 +232,8 @@ class FrequencyRule(RuleType):
 
     def add_terms_data(self, terms):
         if 'nested_query_key' in self.rules and self.rules['nested_query_key'] == True:
-            elastalert_logger.warn(terms)
+            #letting this log message stay inorder to debug issues in future
+            elastalert_logger.info(terms)
             for timestamp, buckets in terms.iteritems():
                 self.flatten_nested_aggregations(timestamp,buckets)
         else:
@@ -239,8 +241,6 @@ class FrequencyRule(RuleType):
                 for bucket in buckets:
                     event = ({self.ts_field: timestamp,
                             self.rules['query_key']: bucket['key']}, bucket['doc_count'])
-                    print("event")
-                    print(event)
                     self.occurrences.setdefault(bucket['key'], EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
                     self.check_for_match(bucket['key'])
 

@@ -29,5 +29,8 @@ ENV PATH=/usr/local/lib:/usr/lib:$PATH
 
 WORKDIR /opt/elastalert
 
-CMD ["/usr/local/bin/elastalert-create-index","--config","/data/elastalert/config.yaml", "--verbose"]
-CMD ["/usr/local/bin/elastalert","--config","/data/elastalert/config.yaml", "--verbose"]
+COPY commands.sh /scripts/commands.sh
+RUN ["chmod", "+x", "/scripts/commands.sh"]
+ENTRYPOINT ["/scripts/commands.sh"]
+#CMD ["/usr/local/bin/elastalert-create-index","--config","/data/elastalert/config.yaml", "--verbose"]
+#CMD ["/usr/local/bin/elastalert","--config","/data/elastalert/config.yaml", "--verbose"]

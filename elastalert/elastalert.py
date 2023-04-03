@@ -449,7 +449,7 @@ class ElastAlerter(object):
             # (so big that they will fill the entire terminal buffer)
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
-            self.handle_error('Error running query: %s' % (e), {'rule': rule['name'], 'query': query})
+            self.handle_error('Error running query: %s' % (e), {'rule': rule['name'], 'query': query},rule=rule)
             return None
         hits = res['hits']['hits']
         self.thread_data.num_hits += len(hits)
@@ -500,7 +500,7 @@ class ElastAlerter(object):
             # (so big that they will fill the entire terminal buffer)
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
-            self.handle_error('Error running count query: %s' % (e), {'rule': rule['name'], 'query': query})
+            self.handle_error('Error running count query: %s' % (e), {'rule': rule['name'], 'query': query}, rule=rule)
             return None
 
         self.thread_data.num_hits += res['hits']['total']
@@ -554,7 +554,7 @@ class ElastAlerter(object):
             # (so big that they will fill the entire terminal buffer)
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
-            self.handle_error('Error running terms query: %s' % (e), {'rule': rule['name'], 'query': query})
+            self.handle_error('Error running terms query: %s' % (e), {'rule': rule['name'], 'query': query}, rule=rule)
             return None
 
         if 'aggregations' not in res:
@@ -590,7 +590,7 @@ class ElastAlerter(object):
         except ElasticsearchException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
-            self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
+            self.handle_error('Error running query: %s' % (e), {'rule': rule['name']}, rule=rule)
             return None
         if 'aggregations' not in res:
             return {}
@@ -656,7 +656,7 @@ class ElastAlerter(object):
         except requests.exceptions.RequestException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
-            self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
+            self.handle_error('Error running query: %s' % (e), {'rule': rule['name']}, rule=rule)
             return None,0
         res = json.loads(res.content)
         return int(res['data'][0][agg_key]), res['rows']
@@ -788,7 +788,7 @@ class ElastAlerter(object):
                     elastalert_logger.info("Found expired previous run for %s at %s" % (rule['name'], endtime))
                     return None
         except (ElasticsearchException, KeyError) as e:
-            self.handle_error('Error querying for last run: %s' % (e), {'rule': rule['name']})
+            self.handle_error('Error querying for last run: %s' % (e), {'rule': rule['name']}, rule=rule)
 
     def set_starttime(self, rule, endtime):
         """ Given a rule and an endtime, sets the appropriate starttime for it. """
@@ -1034,7 +1034,7 @@ class ElastAlerter(object):
                         try:
                             enhancement.process(match)
                         except EAException as e:
-                            self.handle_error("Error running match enhancement: %s" % (e), {'rule': rule['name']})
+                            self.handle_error("Error running match enhancement: %s" % (e), {'rule': rule['name']}, rule=rule)
                 except DropMatchException:
                     continue
 
@@ -1059,7 +1059,7 @@ class ElastAlerter(object):
                 'hits': max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
                 '@timestamp': ts_now(),
                 'time_taken': time_taken}
-        self.writeback('elastalert_status', body)
+        self.writeback('elastalert_status', body, rule)
 
         # Write metrics about the run to statsd
         if self.statsd:
@@ -1368,7 +1368,7 @@ class ElastAlerter(object):
         try:
             num_matches = self.run_rule(rule, endtime, rule.get('initial_starttime'))
         except EAException as e:
-            self.handle_error("Error running rule %s: %s" % (rule['name'], e), {'rule': rule['name']})
+            self.handle_error("Error running rule %s: %s" % (rule['name'], e), {'rule': rule['name']}, rule=rule)
         except Exception as e:
             self.handle_uncaught_exception(e, rule)
         else:
@@ -1487,7 +1487,7 @@ class ElastAlerter(object):
                     except DropMatchException:
                         pass
                     except EAException as e:
-                        self.handle_error("Error running match enhancement: %s" % (e), {'rule': rule['name']})
+                        self.handle_error("Error running match enhancement: %s" % (e), {'rule': rule['name']}, rule=rule)
                 matches = valid_matches
                 if not matches:
                     return None
@@ -1509,7 +1509,7 @@ class ElastAlerter(object):
             try:
                 alert.alert(matches)
             except EAException as e:
-                self.handle_error('Error while running alert %s: %s' % (alert.get_info()['type'], e), {'rule': rule['name']})
+                self.handle_error('Error while running alert %s: %s' % (alert.get_info()['type'], e), {'rule': rule['name']}, rule=rule)
                 alert_exception = str(e)
             else:
                 self.thread_data.alerts_sent += 1
@@ -1667,7 +1667,7 @@ class ElastAlerter(object):
                                              doc_type='elastalert',
                                              id=_id)
                 except ElasticsearchException:  # TODO: Give this a more relevant exception, try:except: is evil.
-                    self.handle_error("Failed to delete alert %s at %s" % (_id, alert_time))
+                    self.handle_error("Failed to delete alert %s at %s" % (_id, alert_time), rule=rule)
 
         # Send in memory aggregated alerts
         for rule in self.rules:
@@ -1727,7 +1727,7 @@ class ElastAlerter(object):
             if len(res['hits']['hits']) == 0:
                 return None
         except (KeyError, ElasticsearchException) as e:
-            self.handle_error("Error searching for pending aggregated matches: %s" % (e), {'rule_name': rule['name']})
+            self.handle_error("Error searching for pending aggregated matches: %s" % (e), {'rule_name': rule['name']}, rule=rule)
             return None
 
         return res['hits']['hits'][0]
@@ -1766,7 +1766,7 @@ class ElastAlerter(object):
                         iter = croniter(rule['aggregation']['schedule'], ts_now())
                         alert_time = unix_to_dt(iter.get_next())
                     except Exception as e:
-                        self.handle_error("Error parsing aggregate send time Cron format %s" % (e), rule['aggregation']['schedule'])
+                        self.handle_error("Error parsing aggregate send time Cron format %s" % (e), rule['aggregation']['schedule'], rule=rule)
                 else:
                     try:
                         if rule.get('aggregate_by_match_time', False):
@@ -1775,7 +1775,7 @@ class ElastAlerter(object):
                         else:
                             alert_time = ts_now() + rule['aggregation']
                     except Exception as e:
-                        self.handle_error("[add_aggregated_alert]Error parsing aggregate send time format %s" % (e), rule['aggregation'])
+                        self.handle_error("[add_aggregated_alert]Error parsing aggregate send time format %s" % (e), rule['aggregation'], rule=rule)
 
                 rule['aggregate_alert_time'][aggregation_key_value] = alert_time
                 agg_id = None
@@ -1885,7 +1885,7 @@ class ElastAlerter(object):
                 return True
         return False
 
-    def handle_error(self, message, data=None):
+    def handle_error(self, message, data=None, rule=None):
         ''' Logs message at error level and writes message, data and traceback to Elasticsearch. '''
         elastalert_logger.error(message)
         body = {'message': message}
@@ -1893,12 +1893,12 @@ class ElastAlerter(object):
         body['traceback'] = tb.strip().split('\n')
         if data:
             body['data'] = data
-        self.writeback('elastalert_error', body)
+        self.writeback('elastalert_error', body, rule)
 
     def handle_uncaught_exception(self, exception, rule):
         """ Disables a rule and sends a notification. """
         elastalert_logger.error(traceback.format_exc())
-        self.handle_error('Uncaught exception running rule %s: %s' % (rule['name'], exception), {'rule': rule['name']})
+        self.handle_error('Uncaught exception running rule %s: %s' % (rule['name'], exception), {'rule': rule['name']}, rule=rule)
         if self.disable_rules_on_error:
             self.rules = [running_rule for running_rule in self.rules if running_rule['name'] != rule['name']]
             self.disabled_rules.append(rule)
@@ -1943,7 +1943,7 @@ class ElastAlerter(object):
             smtp = SMTP(self.smtp_host)
             smtp.sendmail(self.from_addr, recipients, email.as_string())
         except (SMTPException, error) as e:
-            self.handle_error('Error connecting to SMTP host: %s' % (e), {'email_body': email_body})
+            self.handle_error('Error connecting to SMTP host: %s' % (e), {'email_body': email_body}, rule=rule)
 
     def get_top_counts(self, rule, starttime, endtime, keys, number=None, qk=None):
         """ Counts the number of events for each unique value for each key field.

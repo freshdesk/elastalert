@@ -1,4 +1,5 @@
 import prometheus_client
+from elastalert.util import (elastalert_logger)
 
 
 class PrometheusWrapper:
@@ -14,13 +15,14 @@ class PrometheusWrapper:
         client.writeback = self.metrics_writeback
 
         # initialize prometheus metrics to be exposed
-        self.prom_scrapes = prometheus_client.Counter('elastalert_scrapes', 'Number of scrapes for rule', ['rule_name'])
-        self.prom_hits = prometheus_client.Counter('elastalert_hits', 'Number of hits for rule', ['rule_name'])
-        self.prom_matches = prometheus_client.Counter('elastalert_matches', 'Number of matches for rule', ['rule_name'])
-        self.prom_time_taken = prometheus_client.Counter('elastalert_time_taken', 'Time taken to evaluate rule', ['rule_name'])
-        self.prom_alerts_sent = prometheus_client.Counter('elastalert_alerts_sent', 'Number of alerts sent for rule', ['rule_name'])
-        self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name'])
-        self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors for rule')
+        self.prom_scrapes = prometheus_client.Counter('elastalert_scrapes', 'Number of scrapes for rule', ['rule_name', 'tenant'])
+        self.prom_hits = prometheus_client.Counter('elastalert_hits', 'Number of hits for rule', ['rule_name', 'tenant'])
+        self.prom_matches = prometheus_client.Counter('elastalert_matches', 'Number of matches for rule', ['rule_name', 'tenant'])
+        self.prom_time_taken = prometheus_client.Counter('elastalert_time_taken', 'Time taken to evaluate rule', ['rule_name', 'tenant'])
+        self.prom_alerts_sent = prometheus_client.Counter('elastalert_alerts_sent', 'Number of alerts sent for rule', ['rule_name', 'tenant'])
+        self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name', 'tenant'])
+        self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors ', ['tenant'])
+        self.prom_errors_per_rule = prometheus_client.Counter('elastalert_errors_per_rule', 'Number of errors per rule ', ['rule_name', 'tenant' ])
         self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
 
     def start(self):
@@ -38,18 +40,26 @@ class PrometheusWrapper:
 
         res = self.writeback(doc_type, body)
         try:
+            tenant = "all"
+            
+            if rule is not None and "tenant" in rule:
+                tenant = rule["tenant"]
             if doc_type == 'elastalert_status':
-                self.prom_hits.labels(body['rule_name']).inc(int(body['hits']))
-                self.prom_matches.labels(body['rule_name']).inc(int(body['matches']))
-                self.prom_time_taken.labels(body['rule_name']).inc(float(body['time_taken']))
+                self.prom_hits.labels(body['rule_name'], tenant).inc(int(body['hits']))
+                self.prom_matches.labels(body['rule_name'], tenant).inc(int(body['matches']))
+                self.prom_time_taken.labels(body['rule_name'], tenant).inc(float(body['time_taken']))
             elif doc_type == 'elastalert':
                 if body['alert_sent']:
-                    self.prom_alerts_sent.labels(body['rule_name']).inc()
+                    self.prom_alerts_sent.labels(body['rule_name'], tenant).inc()
                 else:
-                    self.prom_alerts_not_sent.labels(body['rule_name']).inc()
+                    self.prom_alerts_not_sent.labels(body['rule_name'], tenant).inc()
             elif doc_type == 'elastalert_error':
-                self.prom_errors.inc()
+                if rule is not None:
+                    self.prom_errors_per_rule.labels(rule['name'],tenant).inc()
+                self.prom_errors.labels(tenant).inc()
             elif doc_type == 'silence':
                 self.prom_alerts_silenced.labels(body['rule_name']).inc()
+        except Exception as e:
+            elastalert_logger.error("Error in prometheus wrapper:  %s" % e)
         finally:
             return res

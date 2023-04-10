@@ -23,6 +23,7 @@ class PrometheusWrapper:
         self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name', 'tenant'])
         self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors ', ['tenant'])
         self.prom_errors_per_rule = prometheus_client.Counter('elastalert_errors_per_rule', 'Number of errors per rule ', ['rule_name', 'tenant' ])
+        self.disabled_rules = prometheus_client.Counter('elastalert_disabled_rules', 'Metric used for presence of disabled rules', ['rule_name', 'tenant' ])
         self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
 
     def start(self):
@@ -54,7 +55,12 @@ class PrometheusWrapper:
                 else:
                     self.prom_alerts_not_sent.labels(body['rule_name'], tenant).inc()
             elif doc_type == 'elastalert_error':
+                print('coming here to elastalert_error')
                 if rule is not None:
+                    print('coming here to rule_not_none %s' % body['message'])
+                    if '[rule-not-running]' in body['message']:
+                        print('coming here')
+                        self.disabled_rules.labels(rule['name'],tenant).inc()
                     self.prom_errors_per_rule.labels(rule['name'],tenant).inc()
                 self.prom_errors.labels(tenant).inc()
             elif doc_type == 'silence':

@@ -147,6 +147,7 @@ class ElastAlerter(object):
         self.rule_hashes = self.rules_loader.get_hashes(self.conf, self.args.rule)
         self.starttime = self.args.start
         self.disabled_rules = []
+        self.rules_not_running = []
         self.replace_dots_in_field_names = self.conf.get('replace_dots_in_field_names', False)
         self.thread_data.alerts_sent = 0
         self.thread_data.num_hits = 0
@@ -393,6 +394,8 @@ class ElastAlerter(object):
         :param endtime: The latest time to query.
         :return: A list of hits, bounded by rule['max_query_size'] (or self.max_query_size).
         """
+
+        
 
         query = self.get_query(
             rule['filter'],
@@ -1269,8 +1272,9 @@ class ElastAlerter(object):
             if next_run < datetime.datetime.utcnow():
                 continue
 
-            for rule in self.disabled_rules:
-                self.handle_error("[rule-disabled] %s is disabled" % rule['name'],rule=rule)
+            for rule in self.rules_not_running:
+                print('coming in for')
+                self.handle_error("[rule-not-running] %s is disabled and not running" % rule['name'],rule=rule)
 
             # Show disabled rules
             if self.show_disabled_rules:
@@ -1905,6 +1909,7 @@ class ElastAlerter(object):
         if self.disable_rules_on_error:
             self.rules = [running_rule for running_rule in self.rules if running_rule['name'] != rule['name']]
             self.disabled_rules.append(rule)
+            self.rules_not_running.append(rule)
             self.scheduler.pause_job(job_id=rule['name'])
             elastalert_logger.info('Rule %s disabled', rule['name'])
         if self.notify_email:

@@ -1269,6 +1269,9 @@ class ElastAlerter(object):
             if next_run < datetime.datetime.utcnow():
                 continue
 
+            for rule in self.disabled_rules:
+                self.handle_error("[rule-disabled] %s is disabled" % rule['name'],rule=rule)
+
             # Show disabled rules
             if self.show_disabled_rules:
                 elastalert_logger.info("Disabled rules are: %s" % (str(self.get_disabled_rules())))

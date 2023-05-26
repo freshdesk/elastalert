@@ -29,7 +29,7 @@ from elasticsearch.exceptions import ConnectionError
 from elasticsearch.exceptions import ElasticsearchException
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch.exceptions import TransportError
-from elastalert.ruletypes import ErrorRateRule
+from elastalert.ruletypes import ErrorRateRule, NewTermsRule
 
 from elastalert.alerters.debug import DebugAlerter
 from elastalert.config import load_conf
@@ -470,6 +470,36 @@ class ElastAlerter(object):
 
         return hits
 
+    def get_new_terms(self,rule, starttime, endtime):
+        rule_inst = rule["type"]
+        data = {}
+        for field in rule["fields"]:
+            if type(field) == list:
+                #todo: composite fields
+                pass
+            else:
+                query = rule_inst.get_new_term_query(starttime,endtime,field)
+                request = self.get_msearch_query(query,rule)
+                res = self.thread_data.current_es.msearch(body=request)
+                res = res['responses'][0] 
+
+                if 'aggregations' in res:
+                    buckets = res['aggregations']['values']['buckets']
+                    new_terms = [bucket['key'] for bucket in buckets]
+                    data[field] = new_terms
+                    self.thread_data.num_hits += len(new_terms)
+        lt = rule.get('use_local_time')
+        status_log = "Queried rule %s from %s to %s: %s / %s hits" % (
+            rule['name'],
+            pretty_ts(starttime, lt, self.pretty_ts_format),
+            pretty_ts(endtime, lt, self.pretty_ts_format),
+            self.thread_data.num_hits,
+            self.thread_data.num_hits,
+        )
+        elastalert_logger.info(status_log)
+
+        return {endtime : data} 
+
     def get_hits_count(self, rule, starttime, endtime, index):
         """ Query Elasticsearch for the count of results and returns a list of timestamps
         equal to the endtime. This allows the results to be passed to rules which expect
@@ -713,7 +743,9 @@ class ElastAlerter(object):
         rule_inst = rule['type']
         rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
         index = self.get_index(rule, start, end)
-        if rule.get('use_count_query'):
+        if isinstance(rule_inst, NewTermsRule):
+            data = self.get_new_terms(rule, start, end)
+        elif rule.get('use_count_query'):
             data = self.get_hits_count(rule, start, end, index)
         elif rule.get('use_terms_query'):
             data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
@@ -732,7 +764,9 @@ class ElastAlerter(object):
         if data is None:
             return False
         elif data:
-            if rule.get('use_count_query'):
+            if isinstance(rule_inst, NewTermsRule):
+                rule_inst.add_new_term_data(data)
+            elif rule.get('use_count_query'):
                 rule_inst.add_count_data(data)
             elif rule.get('use_terms_query'):
                 rule_inst.add_terms_data(data)

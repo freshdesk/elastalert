@@ -733,19 +733,18 @@ class NewTermsRule(RuleType):
 
         # For composite keys, we will need to perform sub-aggregations
         if type(field) == list:
-            pass
-            # self.seen_values.setdefault(tuple(field), [])
-            # level = query['aggs']
-            # # Iterate on each part of the composite key and add a sub aggs clause to the elastic search query
-            # for i, sub_field in enumerate(field):
-            #     if self.rules.get('use_keyword_postfix', True):
-            #         level['values']['terms']['field'] = add_raw_postfix(sub_field, True)
-            #     else:
-            #         level['values']['terms']['field'] = sub_field
-            #     if i < len(field) - 1:
-            #         # If we have more fields after the current one, then set up the next nested structure
-            #         level['values']['aggs'] = {'values': {'terms': copy.deepcopy(field_name)}}
-            #         level = level['values']['aggs']
+            self.seen_values.setdefault(tuple(field), [])
+            level = query['aggs']
+            # Iterate on each part of the composite key and add a sub aggs clause to the elastic search query
+            for i, sub_field in enumerate(field):
+                if self.rules.get('use_keyword_postfix', True):
+                    level['values']['terms']['field'] = add_raw_postfix(sub_field, True)
+                else:
+                    level['values']['terms']['field'] = sub_field
+                if i < len(field) - 1:
+                    # If we have more fields after the current one, then set up the next nested structure
+                    level['values']['aggs'] = {'values': {'terms': copy.deepcopy(field_name)}}
+                    level = level['values']['aggs']
         else:
             self.seen_values.setdefault(field, [])
             # For non-composite keys, only a single agg is needed
@@ -773,13 +772,13 @@ class NewTermsRule(RuleType):
         else:
             end = ts_now()
 
-        # for testing in local
-        # end = end - datetime.timedelta(**{'hours': 18})
+        # # for testing in local
+        # end = end - datetime.timedelta(**{'hours': 12})
 
         start = end - window_size
         step = datetime.timedelta(**self.rules.get('window_step_size', {'days': 1}))
         
-        # for testing in local
+        # ## for testing in local
         # print("datetimes ----------------------------------------------------------------")
         # lt = self.rules.get('use_local_time')
         # fmt = self.rules.get('custom_pretty_ts_format')
@@ -788,12 +787,6 @@ class NewTermsRule(RuleType):
 
 
         for field in self.fields:
-            if type(field) == list:
-                elastalert_logger.warning((
-                            'Composite key fields not supported at the moment, skipping field - {}'.format(field)
-                        ))
-                continue
-
             tmp_start = start
             tmp_end = min(start + step, end)
             query = self.get_new_term_query(tmp_start,tmp_end,field)
@@ -951,19 +944,17 @@ class NewTermsRule(RuleType):
     def add_new_term_data(self, payload):
         timestamp = list(payload.keys())[0]
         data = payload[timestamp]
-        print(data)
-        for field in list(data.keys()):
-            if type(field) == list:
-                # todo : parse data for composite fields 
-                pass
-            else:
-                for value in data[field]:
-                    if value not in self.seen_values[field]:
-                        match = {field: field,
-                                    self.rules['timestamp_field']: timestamp ,
-                                    'new_value': value}
-                        self.add_match(copy.deepcopy(match))
-                        self.seen_values[field].append(value)
+        for field in self.fields:
+            lookup_key =tuple(field) if type(field) == list else field
+            for value in data[lookup_key]:
+                if value not in self.seen_values[lookup_key]:
+                    match = {
+                        "field": lookup_key,
+                        self.rules['timestamp_field']: timestamp,
+                        'new_value': tuple(value) if type(field) == list else value
+                        }
+                    self.add_match(copy.deepcopy(match))
+                    self.seen_values[lookup_key].append(value)
                 
     def add_data(self, data):
         for document in data:

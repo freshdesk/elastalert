@@ -470,34 +470,45 @@ class ElastAlerter(object):
 
         return hits
 
-    def get_new_terms(self,rule, starttime, endtime):
+    def get_new_terms_data(self, rule, starttime, endtime, field):
+        new_terms = []
+
         rule_inst = rule["type"]
-        data = {}
-
         try:
-            for field in rule["fields"]:
-                if type(field) == list:
-                    #todo: composite fields
-                    pass
-                else:
-                    query = rule_inst.get_new_term_query(starttime,endtime,field)
-                    request = self.get_msearch_query(query,rule)
-                    res = self.thread_data.current_es.msearch(body=request)
-                    res = res['responses'][0] 
+            query = rule_inst.get_new_term_query(starttime,endtime,field)
+            request = self.get_msearch_query(query,rule)
+            res = self.thread_data.current_es.msearch(body=request)
+            res = res['responses'][0] 
 
-                    if 'aggregations' in res:
-                        buckets = res['aggregations']['values']['buckets']
-                        new_terms = [bucket['key'] for bucket in buckets]
-                        data[field] = new_terms
-                        self.thread_data.num_hits += len(new_terms)
+            if 'aggregations' in res:
+                buckets = res['aggregations']['values']['buckets']
+                if type(field) == list:
+                    for bucket in buckets:
+                        new_terms += rule_inst.flatten_aggregation_hierarchy(bucket)
+                else:     
+                    new_terms = [bucket['key'] for bucket in buckets]
+                
         except ElasticsearchException as e:
-            # Elasticsearch sometimes gives us GIGANTIC error messages
-            # (so big that they will fill the entire terminal buffer)
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
-            self.handle_error('Error running count query: %s' % (e), {'rule': rule['name'], 'query': query})
+            self.handle_error('Error running new terms query: %s' % (e), {'rule': rule['name'], 'query': query})
             return None
+        
+        return new_terms
 
+
+            
+
+    def get_new_terms(self,rule, starttime, endtime):
+        data = {}
+
+        for field in rule['fields']:
+            new_terms = self.get_new_terms_data(rule,starttime,endtime,field)
+            self.thread_data.num_hits += len(new_terms)
+            if type(field) == list:
+                data[tuple(field)] = new_terms
+            else:
+                data[field] = new_terms
         
         lt = rule.get('use_local_time')
         status_log = "Queried rule %s from %s to %s: %s / %s hits" % (

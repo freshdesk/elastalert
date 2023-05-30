@@ -1188,7 +1188,7 @@ class MetricAggregationRule(BaseAggregationRule):
         query = {self.metric_key: {self.rules['metric_agg_type']: {'field': self.rules['metric_agg_key']}}}
         if self.rules['metric_agg_type'] in self.allowed_percent_aggregations:
             query[self.metric_key][self.rules['metric_agg_type']]['percents'] = [self.rules['percentile_range']]
-            query[self.metric_key][self.rules['metric_agg_type']]['keyed'] = False
+            # query[self.metric_key][self.rules['metric_agg_type']]['keyed'] = True
         return query
 
     def check_matches(self, timestamp, query_key, aggregation_data):

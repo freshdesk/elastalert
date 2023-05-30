@@ -220,7 +220,7 @@ class ElastAlerter(object):
         search_arr.append({'index': [rule['index']]})
         if rule.get('use_count_query'):
             query['size'] = 0
-        if rule['include']:
+        if rule.get('include'):
             query['_source'] = {}
             query['_source']['includes'] = rule['include']
         search_arr.append(query)

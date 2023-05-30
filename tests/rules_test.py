@@ -567,14 +567,29 @@ def test_change():
 def test_new_term(version):
     rules = {'fields': ['a', 'b'],
              'timestamp_field': '@timestamp',
-             'es_host': 'example.com', 'es_port': 10, 'index': 'logstash',
+             'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-    mock_res = {'aggregations': {'filtered': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-                                                                     {'key': 'key2', 'doc_count': 5}]}}}}
+    mock_res = {
+        'responses': [{
+            'aggregations': {
+                'values': {
+                    'buckets': [{
+                            'key': 'key1',
+                            'doc_count': 1
+                        },
+                        {
+                            'key': 'key2',
+                            'doc_count': 5
+                        }
+                    ]
+                }
+            }
+        }]
+    }
 
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = version
         call_args = []
 
@@ -587,7 +602,7 @@ def test_new_term(version):
         rule = NewTermsRule(rules)
 
     # 30 day default range, 1 day default step, times 2 fields
-    assert rule.es.search.call_count == 60
+    assert rule.es.msearch.call_count == 60
 
     # Assert that all calls have the proper ordering of time ranges
     old_ts = '2010-01-01T00:00:00Z'
@@ -624,9 +639,9 @@ def test_new_term(version):
 
     # Missing_field
     rules['alert_on_missing_field'] = True
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = version
         rule = NewTermsRule(rules)
     rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
@@ -638,17 +653,17 @@ def test_new_term_nested_field():
 
     rules = {'fields': ['a', 'b.c'],
              'timestamp_field': '@timestamp',
-             'es_host': 'example.com', 'es_port': 10, 'index': 'logstash',
+             'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-    mock_res = {'aggregations': {'filtered': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-                                                                     {'key': 'key2', 'doc_count': 5}]}}}}
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
+                                                                     {'key': 'key2', 'doc_count': 5}]}}}] }
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
-        assert rule.es.search.call_count == 60
+        assert rule.es.msearch.call_count == 60
 
     # Key3 causes an alert for nested field b.c
     rule.add_data([{'@timestamp': ts_now(), 'b': {'c': 'key3'}}])
@@ -661,20 +676,20 @@ def test_new_term_nested_field():
 def test_new_term_with_terms():
     rules = {'fields': ['a'],
              'timestamp_field': '@timestamp',
-             'es_host': 'example.com', 'es_port': 10, 'index': 'logstash', 'query_key': 'a',
+             'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash', 'query_key': 'a',
              'window_step_size': {'days': 2},
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-    mock_res = {'aggregations': {'filtered': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-                                                                     {'key': 'key2', 'doc_count': 5}]}}}}
+    mock_res = {'responses' : [{'aggregations':  {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
+                                                                     {'key': 'key2', 'doc_count': 5}]}}}]}
 
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
         # Only 15 queries because of custom step size
-        assert rule.es.search.call_count == 15
+        assert rule.es.msearch.call_count == 15
 
     # Key1 and key2 shouldn't cause a match
     terms = {ts_now(): [{'key': 'key1', 'doc_count': 1},
@@ -699,51 +714,47 @@ def test_new_term_with_terms():
 def test_new_term_with_composite_fields():
     rules = {'fields': [['a', 'b', 'c'], ['d', 'e.f']],
              'timestamp_field': '@timestamp',
-             'es_host': 'example.com', 'es_port': 10, 'index': 'logstash',
+             'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
 
     mock_res = {
-        'aggregations': {
-            'filtered': {
+        'responses': [{
+            'aggregations': {
                 'values': {
-                    'buckets': [
-                        {
-                            'key': 'key1',
-                            'doc_count': 5,
-                            'values': {
-                                'buckets': [
-                                    {
-                                        'key': 'key2',
-                                        'doc_count': 5,
-                                        'values': {
-                                            'buckets': [
-                                                {
-                                                    'key': 'key3',
-                                                    'doc_count': 3,
-                                                },
-                                                {
-                                                    'key': 'key4',
-                                                    'doc_count': 2,
-                                                },
-                                            ]
-                                        }
-                                    }
-                                ]
-                            }
+                    'buckets': [{
+                        'key': 'key1',
+                        'doc_count': 5,
+                        'values': {
+                            'buckets': [{
+                                'key': 'key2',
+                                'doc_count': 5,
+                                'values': {
+                                    'buckets': [{
+                                            'key': 'key3',
+                                            'doc_count': 3,
+                                        },
+                                        {
+                                            'key': 'key4',
+                                            'doc_count': 2,
+                                        },
+                                    ]
+                                }
+                            }]
                         }
-                    ]
+                    }]
+
                 }
             }
-        }
+        }]
     }
 
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
-        assert rule.es.search.call_count == 60
+        assert rule.es.msearch.call_count == 60
 
     # key3 already exists, and thus shouldn't cause a match
     rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key3'}])
@@ -774,9 +785,9 @@ def test_new_term_with_composite_fields():
 
     # Missing_fields
     rules['alert_on_missing_field'] = True
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
     rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])

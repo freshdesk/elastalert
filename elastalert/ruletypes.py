@@ -708,7 +708,7 @@ class NewTermsRule(RuleType):
         
         field_name = {
             "field": "",
-            "size": self.rules.get('terms_size', 500),
+            "size": min(self.rules.get('terms_size', 500),1000),
             "order": {
                 "_count": "desc"
             }

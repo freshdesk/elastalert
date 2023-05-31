@@ -705,9 +705,22 @@ class NewTermsRule(RuleType):
             raise EAException('Error searching for existing terms: %s' % (repr(e))).with_traceback(sys.exc_info()[2])
 
     def get_new_term_query(self,starttime,endtime,field):
-
-        field_name = {"field": "", "size": 2147483647}  # Integer.MAX_VALUE
-        query = {"aggs": {"values": {"terms": field_name}}}
+        
+        field_name = {
+            "field": "",
+            "size": self.rules.get('terms_size', 500),
+            "order": {
+                "_count": "desc"
+            }
+        }  
+        
+        query = {
+            "aggs": {
+                "values": {
+                    "terms": field_name
+                }
+            }
+        }
 
         query["query"] = {
             'bool': {
@@ -762,7 +775,7 @@ class NewTermsRule(RuleType):
         """ Performs a terms aggregation for each field to get every existing term. """
 
         self.es = kibana_adapter_client(self.rules)
-        window_size = datetime.timedelta(**self.rules.get('terms_window_size', {'days': 30}))
+        window_size = datetime.timedelta(**self.rules.get('terms_window_size', {'days': 7}))
         
 
         if args and hasattr(args, 'start') and args.start:
@@ -772,20 +785,9 @@ class NewTermsRule(RuleType):
         else:
             end = ts_now()
 
-        # # for testing in local
-        # end = end - datetime.timedelta(**{'hours': 12})
-
         start = end - window_size
         step = datetime.timedelta(**self.rules.get('window_step_size', {'days': 1}))
         
-        # ## for testing in local
-        # print("datetimes ----------------------------------------------------------------")
-        # lt = self.rules.get('use_local_time')
-        # fmt = self.rules.get('custom_pretty_ts_format')
-        # print(pretty_ts(start, lt, fmt))
-        # print(pretty_ts(end, lt, fmt))
-
-
         for field in self.fields:
             tmp_start = start
             tmp_end = min(start + step, end)

@@ -492,7 +492,7 @@ class ElastAlerter(object):
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
             self.handle_error('Error running new terms query: %s' % (e), {'rule': rule['name'], 'query': query})
-            return None
+            return []
         
         return new_terms
 

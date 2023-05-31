@@ -602,7 +602,7 @@ def test_new_term(version):
         rule = NewTermsRule(rules)
 
     # 30 day default range, 1 day default step, times 2 fields
-    assert rule.es.msearch.call_count == 60
+    assert rule.es.msearch.call_count == 14
 
     # Assert that all calls have the proper ordering of time ranges
     old_ts = '2010-01-01T00:00:00Z'
@@ -663,7 +663,7 @@ def test_new_term_nested_field():
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
-        assert rule.es.msearch.call_count == 60
+        assert rule.es.msearch.call_count == 14
 
     # Key3 causes an alert for nested field b.c
     rule.add_data([{'@timestamp': ts_now(), 'b': {'c': 'key3'}}])
@@ -688,8 +688,8 @@ def test_new_term_with_terms():
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
-        # Only 15 queries because of custom step size
-        assert rule.es.msearch.call_count == 15
+        # Only 4 queries because of custom step size
+        assert rule.es.msearch.call_count == 4
 
     # Key1 and key2 shouldn't cause a match
     terms = {ts_now(): [{'key': 'key1', 'doc_count': 1},
@@ -754,7 +754,7 @@ def test_new_term_with_composite_fields():
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
-        assert rule.es.msearch.call_count == 60
+        assert rule.es.msearch.call_count == 14
 
     # key3 already exists, and thus shouldn't cause a match
     rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key3'}])

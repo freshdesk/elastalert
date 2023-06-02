@@ -677,6 +677,7 @@ class NewTermsRule(RuleType):
     def __init__(self, rule, args=None):
         super(NewTermsRule, self).__init__(rule, args)
         self.seen_values = {}
+        self.last_updated_at = None
         # Allow the use of query_key or fields
         if 'fields' not in self.rules:
             if 'query_key' not in self.rules:
@@ -703,6 +704,13 @@ class NewTermsRule(RuleType):
         except Exception as e:
             # Refuse to start if we cannot get existing terms
             raise EAException('Error searching for existing terms: %s' % (repr(e))).with_traceback(sys.exc_info()[2])
+
+    def should_refresh_terms(self):
+        return self.last_updated_at is None or self.last_updated_at < ( ts_now() - datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})) )
+
+    def update_terms(self):
+        if self.should_refresh_terms():
+            self.get_all_terms(args=None)
 
     def get_new_term_query(self,starttime,endtime,field):
         
@@ -839,6 +847,7 @@ class NewTermsRule(RuleType):
                     continue
                 self.seen_values[key] = list(set(values))
                 elastalert_logger.info('Found %s unique values for %s' % (len(set(values)), key))
+        self.last_updated_at = ts_now()
 
     def flatten_aggregation_hierarchy(self, root, hierarchy_tuple=()):
         """ For nested aggregations, the results come back in the following format:
@@ -944,6 +953,7 @@ class NewTermsRule(RuleType):
         return results
 
     def add_new_term_data(self, payload):
+        self.update_terms()
         timestamp = list(payload.keys())[0]
         data = payload[timestamp]
         for field in self.fields:

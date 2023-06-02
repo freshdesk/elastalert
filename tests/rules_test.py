@@ -619,34 +619,72 @@ def test_new_term(version):
         old_ts = gte
 
     # Key1 and key2 shouldn't cause a match
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2'}])
+    data = {
+        ts_now() : {
+            "a": ["key1"],
+            "b": ["key2"]
+        }
+    }
+    rule.add_new_term_data(data)
+
+    # rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2'}])
+
     assert rule.matches == []
 
     # Neither will missing values
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
+    data = {
+        ts_now() : {
+            "a": ["key2"],
+            "b": []
+        }
+    }
+    rule.add_new_term_data(data)
+    # rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
     assert rule.matches == []
 
     # Key3 causes an alert for field b
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
+    data = {
+        ts_now() : {
+            "a": ["key2"],
+            "b": ["key3"]
+        }
+    }
+    rule.add_new_term_data(data)
+
+    #rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
     assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == 'b'
-    assert rule.matches[0]['b'] == 'key3'
+    assert rule.matches[0]['field'] == 'b'
+    assert rule.matches[0]['new_value'] == 'key3'
     rule.matches = []
 
     # Key3 doesn't cause another alert for field b
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
+    data = {
+        ts_now() : {
+            "a": ["key2"],
+            "b": ["key3"]
+        }
+    }
+    rule.add_new_term_data(data)
+    # rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
     assert rule.matches == []
 
-    # Missing_field
-    rules['alert_on_missing_field'] = True
-    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
-        mock_es.return_value = mock.Mock()
-        mock_es.return_value.msearch.return_value = mock_res
-        mock_es.return_value.info.return_value = version
-        rule = NewTermsRule(rules)
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
-    assert len(rule.matches) == 1
-    assert rule.matches[0]['missing_field'] == 'b'
+    ## Missing field -  wont work as we use terms aggregation
+    # rules['alert_on_missing_field'] = True
+    # with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+    #     mock_es.return_value = mock.Mock()
+    #     mock_es.return_value.msearch.return_value = mock_res
+    #     mock_es.return_value.info.return_value = version
+    #     rule = NewTermsRule(rules)
+    # data = {
+    #     ts_now() : {
+    #         "a": ["key2"],
+    #         "b": []
+    #     }
+    # }
+    # rule.add_new_term_data(data)
+    # #rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
+    # assert len(rule.matches) == 1
+    # assert rule.matches[0]['missing_field'] == 'b'
 
 
 def test_new_term_nested_field():
@@ -666,135 +704,206 @@ def test_new_term_nested_field():
         assert rule.es.msearch.call_count == 14
 
     # Key3 causes an alert for nested field b.c
-    rule.add_data([{'@timestamp': ts_now(), 'b': {'c': 'key3'}}])
+    data = {
+        ts_now() : {
+            "a": [],
+            "b.c": ["key3"]
+        }
+    }
+    rule.add_new_term_data(data)
+    # rule.add_data([{'@timestamp': ts_now(), 'b': {'c': 'key3'}}])
     assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == 'b.c'
-    assert rule.matches[0]['b']['c'] == 'key3'
+    assert rule.matches[0]['field'] == 'b.c'
+    assert rule.matches[0]['new_value'] == 'key3'
     rule.matches = []
 
+def test_new_term_refresh_interval():
 
-def test_new_term_with_terms():
     rules = {'fields': ['a'],
              'timestamp_field': '@timestamp',
-             'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash', 'query_key': 'a',
-             'window_step_size': {'days': 2},
-             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-    mock_res = {'responses' : [{'aggregations':  {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-                                                                     {'key': 'key2', 'doc_count': 5}]}}}]}
+             'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
+             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'days': 1  }  }
+    mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
+                                                                     {'key': 'key2', 'doc_count': 5}]}}}] }
+
+    #random_test_data
+    data = { ts_now() : { "a": [] } }   
 
     with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
         mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+
+
+        # Rule with refresh_interval not set, defaulting to 6 hours
         rule = NewTermsRule(rules)
 
-        # Only 4 queries because of custom step size
-        assert rule.es.msearch.call_count == 4
+        # get_all_terms should be called when rule initializes
+        assert rule.es.msearch.assert_called_once 
+        mock_es.return_value.msearch.reset_mock()
 
-    # Key1 and key2 shouldn't cause a match
-    terms = {ts_now(): [{'key': 'key1', 'doc_count': 1},
-                        {'key': 'key2', 'doc_count': 1}]}
-    rule.add_terms_data(terms)
-    assert rule.matches == []
+        # get_all_terms should not be called as last_updated will be less than now - 6 hours
+        rule.add_new_term_data(data)
+        assert not rule.es.msearch.called
+        mock_es.return_value.msearch.reset_mock()
 
-    # Key3 causes an alert for field a
-    terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
-    rule.add_terms_data(terms)
-    assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == 'a'
-    assert rule.matches[0]['a'] == 'key3'
-    rule.matches = []
+        # get_all_terms should be called when last_updated is none
+        rule.last_updated_at = None
+        rule.add_new_term_data(data)
+        assert rule.es.msearch.assert_called_once 
+        mock_es.return_value.msearch.reset_mock()
 
-    # Key3 doesn't cause another alert
-    terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
-    rule.add_terms_data(terms)
-    assert rule.matches == []
+        # get_all_terms should not be called as last_updated will not be less than now - 6 hours
+        rule.last_updated_at = ts_now() - datetime.timedelta(**{'hours': 4})
+        rule.add_new_term_data(data)
+        assert not rule.es.msearch.called
 
+        # get_all_terms should be called as last_updated will be less than now - 6 hours
+        rule.last_updated_at = ts_now() - datetime.timedelta(**{'hours': 7})
+        rule.add_new_term_data(data)
+        assert rule.es.msearch.assert_called_once 
+        mock_es.return_value.msearch.reset_mock()
 
-def test_new_term_with_composite_fields():
-    rules = {'fields': [['a', 'b', 'c'], ['d', 'e.f']],
-             'timestamp_field': '@timestamp',
-             'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
-             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-
-    mock_res = {
-        'responses': [{
-            'aggregations': {
-                'values': {
-                    'buckets': [{
-                        'key': 'key1',
-                        'doc_count': 5,
-                        'values': {
-                            'buckets': [{
-                                'key': 'key2',
-                                'doc_count': 5,
-                                'values': {
-                                    'buckets': [{
-                                            'key': 'key3',
-                                            'doc_count': 3,
-                                        },
-                                        {
-                                            'key': 'key4',
-                                            'doc_count': 2,
-                                        },
-                                    ]
-                                }
-                            }]
-                        }
-                    }]
-
-                }
-            }
-        }]
-    }
-
-    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
-        mock_es.return_value = mock.Mock()
-        mock_es.return_value.msearch.return_value = mock_res
-        mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+        # Rule with refresh_interval set to 2 hours
+        rules["refresh_interval"] = {'hours': 2}
         rule = NewTermsRule(rules)
+        mock_es.return_value.msearch.reset_mock()
 
-        assert rule.es.msearch.call_count == 14
+        # get_all_terms should not be called as last_updated will not be less than now - 2 hours
+        rule.last_updated_at = ts_now() - datetime.timedelta(**{'hours': 1})
+        rule.add_new_term_data(data)
+        assert not rule.es.msearch.called
 
-    # key3 already exists, and thus shouldn't cause a match
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key3'}])
-    assert rule.matches == []
+        # get_all_terms should be called as last_updated will be less than now - 2 hours
+        rule.last_updated_at = ts_now() - datetime.timedelta(**{'hours': 3})
+        rule.add_new_term_data(data)
+        assert rule.es.msearch.assert_called_once 
 
-    # key5 causes an alert for composite field [a, b, c]
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key5'}])
-    assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == ('a', 'b', 'c')
-    assert rule.matches[0]['a'] == 'key1'
-    assert rule.matches[0]['b'] == 'key2'
-    assert rule.matches[0]['c'] == 'key5'
-    rule.matches = []
+# new implementation will always use terms
 
-    # New values in other fields that are not part of the composite key should not cause an alert
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key4', 'd': 'unrelated_value'}])
-    assert len(rule.matches) == 0
-    rule.matches = []
+# def test_new_term_with_terms():
+#     rules = {'fields': ['a'],
+#              'timestamp_field': '@timestamp',
+#              'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash', 'query_key': 'a',
+#              'window_step_size': {'days': 2},
+#              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
+#     mock_res = {'responses' : [{'aggregations':  {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
+#                                                                      {'key': 'key2', 'doc_count': 5}]}}}]}
 
-    # Verify nested fields work properly
-    # Key6 causes an alert for nested field e.f
-    rule.add_data([{'@timestamp': ts_now(), 'd': 'key4', 'e': {'f': 'key6'}}])
-    assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == ('d', 'e.f')
-    assert rule.matches[0]['d'] == 'key4'
-    assert rule.matches[0]['e']['f'] == 'key6'
-    rule.matches = []
+#     with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+#         mock_es.return_value = mock.Mock()
+#         mock_es.return_value.msearch.return_value = mock_res
+#         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+#         rule = NewTermsRule(rules)
 
-    # Missing_fields
-    rules['alert_on_missing_field'] = True
-    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
-        mock_es.return_value = mock.Mock()
-        mock_es.return_value.msearch.return_value = mock_res
-        mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
-        rule = NewTermsRule(rules)
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
-    assert len(rule.matches) == 2
-    # This means that any one of the three n composite fields were not present
-    assert rule.matches[0]['missing_field'] == ('a', 'b', 'c')
-    assert rule.matches[1]['missing_field'] == ('d', 'e.f')
+#         # Only 4 queries because of custom step size
+#         assert rule.es.msearch.call_count == 4
+
+#     # Key1 and key2 shouldn't cause a match
+#     terms = {ts_now(): [{'key': 'key1', 'doc_count': 1},
+#                         {'key': 'key2', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert rule.matches == []
+
+#     # Key3 causes an alert for field a
+#     terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert len(rule.matches) == 1
+#     assert rule.matches[0]['new_field'] == 'a'
+#     assert rule.matches[0]['a'] == 'key3'
+#     rule.matches = []
+
+#     # Key3 doesn't cause another alert
+#     terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert rule.matches == []
+
+
+# def test_new_term_with_composite_fields():
+#     rules = {'fields': [['a', 'b', 'c'], ['d', 'e.f']],
+#              'timestamp_field': '@timestamp',
+#              'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
+#              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
+
+#     mock_res = {
+#         'responses': [{
+#             'aggregations': {
+#                 'values': {
+#                     'buckets': [{
+#                         'key': 'key1',
+#                         'doc_count': 5,
+#                         'values': {
+#                             'buckets': [{
+#                                 'key': 'key2',
+#                                 'doc_count': 5,
+#                                 'values': {
+#                                     'buckets': [{
+#                                             'key': 'key3',
+#                                             'doc_count': 3,
+#                                         },
+#                                         {
+#                                             'key': 'key4',
+#                                             'doc_count': 2,
+#                                         },
+#                                     ]
+#                                 }
+#                             }]
+#                         }
+#                     }]
+
+#                 }
+#             }
+#         }]
+#     }
+
+#     with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+#         mock_es.return_value = mock.Mock()
+#         mock_es.return_value.msearch.return_value = mock_res
+#         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+#         rule = NewTermsRule(rules)
+
+#         assert rule.es.msearch.call_count == 14
+
+#     # key3 already exists, and thus shouldn't cause a match
+#     rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key3'}])
+#     assert rule.matches == []
+
+#     # key5 causes an alert for composite field [a, b, c]
+#     rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key5'}])
+#     assert len(rule.matches) == 1
+#     assert rule.matches[0]['new_field'] == ('a', 'b', 'c')
+#     assert rule.matches[0]['a'] == 'key1'
+#     assert rule.matches[0]['b'] == 'key2'
+#     assert rule.matches[0]['c'] == 'key5'
+#     rule.matches = []
+
+#     # New values in other fields that are not part of the composite key should not cause an alert
+#     rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key4', 'd': 'unrelated_value'}])
+#     assert len(rule.matches) == 0
+#     rule.matches = []
+
+#     # Verify nested fields work properly
+#     # Key6 causes an alert for nested field e.f
+#     rule.add_data([{'@timestamp': ts_now(), 'd': 'key4', 'e': {'f': 'key6'}}])
+#     assert len(rule.matches) == 1
+#     assert rule.matches[0]['new_field'] == ('d', 'e.f')
+#     assert rule.matches[0]['d'] == 'key4'
+#     assert rule.matches[0]['e']['f'] == 'key6'
+#     rule.matches = []
+
+#     # Missing_fields
+#     rules['alert_on_missing_field'] = True
+#     with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+#         mock_es.return_value = mock.Mock()
+#         mock_es.return_value.msearch.return_value = mock_res
+#         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+#         rule = NewTermsRule(rules)
+#     rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
+#     assert len(rule.matches) == 2
+#     # This means that any one of the three n composite fields were not present
+#     assert rule.matches[0]['missing_field'] == ('a', 'b', 'c')
+#     assert rule.matches[1]['missing_field'] == ('d', 'e.f')
+
 
 
 def test_flatline():

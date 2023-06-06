@@ -699,18 +699,20 @@ class NewTermsRule(RuleType):
                 if self.rules.get('use_keyword_postfix', True):
                     elastalert_logger.warn('Warning: If query_key is a non-keyword field, you must set '
                                            'use_keyword_postfix to false, or add .keyword/.raw to your query_key.')
+        self.update_terms(args)
+        
+    def should_refresh_terms(self):
+        return self.last_updated_at is None or self.last_updated_at < ( ts_now() - datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})) )
+
+    def update_terms(self,args=None):
         try:
-            self.get_all_terms(args)
+            if self.should_refresh_terms():
+                self.get_all_terms(args=args)
         except Exception as e:
             # Refuse to start if we cannot get existing terms
             raise EAException('Error searching for existing terms: %s' % (repr(e))).with_traceback(sys.exc_info()[2])
 
-    def should_refresh_terms(self):
-        return self.last_updated_at is None or self.last_updated_at < ( ts_now() - datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})) )
-
-    def update_terms(self):
-        if self.should_refresh_terms():
-            self.get_all_terms(args=None)
+        
 
     def get_new_term_query(self,starttime,endtime,field):
         
@@ -806,7 +808,7 @@ class NewTermsRule(RuleType):
                 from elastalert import elastalert
                 msearch_query = elastalert.ElastAlerter.get_msearch_query(query,self.rules)
                 
-                res = self.es.msearch(msearch_query)
+                res = self.es.msearch(msearch_query,request_timeout=50)
                 res = res['responses'][0] 
 
                 if 'aggregations' in res:

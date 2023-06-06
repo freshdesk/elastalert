@@ -173,8 +173,12 @@ class RulesLoader(object):
                     continue
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
-            except EAException as e:
-                raise EAException('Error loading file %s: %s' % (rule_file, e))
+            except EAException as e: 
+                if str(e).startswith("Error initializing rule New term"):
+                    elastalert_logger.error('New term rule initialization failed due to read timeout for rule_file - %s ' % rule_file)
+                    continue
+                else:
+                    raise EAException('Error loading file %s: %s' % (rule_file, e))
 
             rules.append(rule)
             names.append(rule['name'])

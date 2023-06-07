@@ -220,7 +220,7 @@ class FrequencyRule(RuleType):
 
         event = ({self.ts_field: ts}, count)
         self.occurrences.setdefault('all', EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
-        self.check_for_match('all')
+        self.check_for_match('all') 
 
     #nested query key optimizations
     def add_terms_data(self, terms):
@@ -696,7 +696,7 @@ class NewTermsRule(RuleType):
             if [self.rules['query_key']] != self.fields:
                 raise EAException('If use_terms_query is specified, you cannot specify different query_key and fields')
             if not self.rules.get('query_key').endswith('.keyword') and not self.rules.get('query_key').endswith('.raw'):
-                if self.rules.get('use_keyword_postfix', True):
+                if self.rules.get('use_keyword_postfix', False): # making it false by default as we wont use the keyword suffix
                     elastalert_logger.warn('Warning: If query_key is a non-keyword field, you must set '
                                            'use_keyword_postfix to false, or add .keyword/.raw to your query_key.')
         self.update_terms(args)
@@ -760,7 +760,7 @@ class NewTermsRule(RuleType):
             level = query['aggs']
             # Iterate on each part of the composite key and add a sub aggs clause to the elastic search query
             for i, sub_field in enumerate(field):
-                if self.rules.get('use_keyword_postfix', True):
+                if self.rules.get('use_keyword_postfix', False): # making it false by default as we wont use the keyword suffix
                     level['values']['terms']['field'] = add_raw_postfix(sub_field, True)
                 else:
                     level['values']['terms']['field'] = sub_field

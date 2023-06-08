@@ -39,7 +39,7 @@ from elastalert.kibana_external_url_formatter import create_kibana_external_url_
 from elastalert.prometheus_wrapper import PrometheusWrapper
 from elastalert.ruletypes import FlatlineRule
 from elastalert.util import (add_raw_postfix, cronite_datetime_to_timestamp, dt_to_ts, dt_to_unix, EAException,
-                             elastalert_logger, elasticsearch_client,kibana_adapter_client, format_index, lookup_es_key, parse_deadline,
+                             elastalert_logger, elasticsearch_client, get_msearch_query,kibana_adapter_client, format_index, lookup_es_key, parse_deadline,
                              parse_duration, pretty_ts, replace_dots_in_field_names, seconds, set_es_key,
                              should_scrolling_continue, total_seconds, ts_add, ts_now, ts_to_dt, unix_to_dt,
                              ts_utc_to_tz, dt_to_ts_with_format)
@@ -213,21 +213,7 @@ class ElastAlerter(object):
             return index
 
 
-    #backwards compatibility with es6 msearch
-    @staticmethod
-    def get_msearch_query(query, rule):
-        search_arr = []
-        search_arr.append({'index': [rule['index']]})
-        if rule.get('use_count_query'):
-            query['size'] = 0
-        if rule.get('include'):
-            query['_source'] = {}
-            query['_source']['includes'] = rule['include']
-        search_arr.append(query)
-        request = ''
-        for each in search_arr:
-            request += '%s \n' %json.dumps(each)
-        return request
+    
 
     @staticmethod
     def get_query(filters, starttime=None, endtime=None, sort=True, timestamp_field='@timestamp', to_ts_func=dt_to_ts, desc=False):
@@ -402,7 +388,7 @@ class ElastAlerter(object):
             to_ts_func=rule['dt_to_ts'],
         )
 
-        request = self.get_msearch_query(query,rule)
+        request = get_msearch_query(query,rule)
 
         #removed scroll as it aint supported
         # extra_args = {'_source_includes': rule['include']}
@@ -476,7 +462,7 @@ class ElastAlerter(object):
         rule_inst = rule["type"]
         try:
             query = rule_inst.get_new_term_query(starttime,endtime,field)
-            request = self.get_msearch_query(query,rule)
+            request = get_msearch_query(query,rule)
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0] 
 
@@ -541,7 +527,7 @@ class ElastAlerter(object):
             to_ts_func=rule['dt_to_ts'],
         )
 
-        request = self.get_msearch_query(query,rule)
+        request = get_msearch_query(query,rule)
 
         try:
             #using backwards compatibile msearch
@@ -594,7 +580,7 @@ class ElastAlerter(object):
         if size is None:
             size = rule.get('terms_size', 50)
         query = self.get_terms_query(base_query, rule, size, key)
-        request = self.get_msearch_query(query,rule)
+        request = get_msearch_query(query,rule)
 
         try:
             #using backwards compatibile msearch
@@ -634,7 +620,7 @@ class ElastAlerter(object):
         if term_size is None:
             term_size = rule.get('terms_size', 50)
         query = self.get_aggregation_query(base_query, rule, query_key, term_size, rule['timestamp_field'])
-        request = self.get_msearch_query(query,rule)
+        request = get_msearch_query(query,rule)
         try:
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)

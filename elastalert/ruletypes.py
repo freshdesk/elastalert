@@ -7,7 +7,7 @@ import time
 from sortedcontainers import SortedKeyList as sortedlist
 
 from elastalert.util import (add_raw_postfix, dt_to_ts, EAException, elastalert_logger, elasticsearch_client,
-                             format_index, hashable, kibana_adapter_client, lookup_es_key, new_get_event_ts, pretty_ts, total_seconds,
+                             format_index, get_msearch_query, hashable, kibana_adapter_client, lookup_es_key, new_get_event_ts, pretty_ts, total_seconds,
                              ts_now, ts_to_dt, expand_string_into_dict, format_string)
 
 
@@ -812,8 +812,8 @@ class NewTermsRule(RuleType):
 
             # Query the entire time range in small chunks
             while tmp_start < end:
-                from elastalert import elastalert
-                msearch_query = elastalert.ElastAlerter.get_msearch_query(query,self.rules)
+                
+                msearch_query = get_msearch_query(query,self.rules)
                 
                 res = self.es.msearch(msearch_query,request_timeout=50)
                 res = res['responses'][0] 

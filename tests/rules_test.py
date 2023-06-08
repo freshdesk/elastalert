@@ -891,6 +891,24 @@ def test_new_term_with_composite_fields():
     assert rule.matches[0]['new_value'] == ("key1","key2","key5")
     rule.matches = []
 
+def test_new_term_bounds():
+
+    rules = {'fields': ['a'],
+             'timestamp_field': '@timestamp',
+             'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
+             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'days': 10  },
+             'window_step_size' : {'hours': 1  },'refresh_interval' : {'hours': 2  }, 'terms_size': 10000 }
+      
+    rule = NewTermsRule(rules)
+
+    assert rule.window_size == datetime.timedelta(**{'days': 7})
+    assert rule.step == datetime.timedelta(**{'hours': 6})
+    assert rule.refresh_interval == datetime.timedelta(**{'hours': 6})
+    assert rule.terms_size == 1000
+
+
+
+
 
 
 def test_flatline():

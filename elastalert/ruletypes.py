@@ -680,6 +680,18 @@ class NewTermsRule(RuleType):
         self.last_updated_at = None
         self.es = kibana_adapter_client(self.rules)
 
+        # terms_window_size : Default & Upperbound - 7 Days
+        self.window_size = min(datetime.timedelta(**self.rules.get('terms_window_size', {'days': 7})), datetime.timedelta(**{'days': 7}))
+        
+        # window_step_size : Default - 1 Days, Lowerbound: 6 hours
+        self.step =  max( datetime.timedelta(**self.rules.get('window_step_size', {'days': 1})), datetime.timedelta(**{'hours': 6}) )
+        
+        # refresh_interval : Default - 6 hours, Lowerbound: 6 hours
+        self.refresh_interval =  max( datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})), datetime.timedelta(**{'hours': 6}) )
+
+        # refresh_interval : Default - 500, Upperbound: 1000
+        self.terms_size = min(self.rules.get('terms_size', 500),1000)
+
         # Allow the use of query_key or fields
         if 'fields' not in self.rules:
             if 'query_key' not in self.rules:
@@ -703,7 +715,7 @@ class NewTermsRule(RuleType):
                                            'use_keyword_postfix to false, or add .keyword/.raw to your query_key.')
         
     def should_refresh_terms(self):
-        return self.last_updated_at is None or self.last_updated_at < ( ts_now() - datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})) )
+        return self.last_updated_at is None or self.last_updated_at < ( ts_now() - self.refresh_interval)
 
     def update_terms(self,args=None):
         try:
@@ -718,7 +730,7 @@ class NewTermsRule(RuleType):
         
         field_name = {
             "field": "",
-            "size": min(self.rules.get('terms_size', 500),1000),
+            "size": self.terms_size,
             "order": {
                 "_count": "desc"
             }
@@ -784,10 +796,6 @@ class NewTermsRule(RuleType):
     def get_all_terms(self,args):
         """ Performs a terms aggregation for each field to get every existing term. """
 
-        # terms_window_size : Default & Upperbound - 7 Days
-        window_size = min(datetime.timedelta(**self.rules.get('terms_window_size', {'days': 7})), datetime.timedelta(**{'days': 7}))
-        
-
         if args and hasattr(args, 'start') and args.start:
             end = ts_to_dt(args.start)
         elif 'start_date' in self.rules:
@@ -795,13 +803,11 @@ class NewTermsRule(RuleType):
         else:
             end = ts_now()
 
-        start = end - window_size
-        # window_step_size : Default - 1 Days, Lowerbound: 6 hours
-        step =  max( datetime.timedelta(**self.rules.get('window_step_size', {'days': 1})), datetime.timedelta(**{'hours': 6}) )
+        start = end - self.window_size
         
         for field in self.fields:
             tmp_start = start
-            tmp_end = min(start + step, end)
+            tmp_end = min(start + self.step, end)
             query = self.get_new_term_query(tmp_start,tmp_end,field)
 
             # Query the entire time range in small chunks
@@ -831,7 +837,7 @@ class NewTermsRule(RuleType):
                 if tmp_start == tmp_end:
                     break
                 tmp_start = tmp_end
-                tmp_end = min(tmp_start + step, end)
+                tmp_end = min(tmp_start + self.step, end)
                 query = self.get_new_term_query(tmp_start,tmp_end,field)
                 
 

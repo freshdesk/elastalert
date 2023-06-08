@@ -220,7 +220,7 @@ class FrequencyRule(RuleType):
 
         event = ({self.ts_field: ts}, count)
         self.occurrences.setdefault('all', EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
-        self.check_for_match('all') 
+        self.check_for_match('all')
 
     #nested query key optimizations
     def add_terms_data(self, terms):
@@ -678,6 +678,8 @@ class NewTermsRule(RuleType):
         super(NewTermsRule, self).__init__(rule, args)
         self.seen_values = {}
         self.last_updated_at = None
+        self.es = kibana_adapter_client(self.rules)
+
         # Allow the use of query_key or fields
         if 'fields' not in self.rules:
             if 'query_key' not in self.rules:
@@ -699,15 +701,13 @@ class NewTermsRule(RuleType):
                 if self.rules.get('use_keyword_postfix', False): # making it false by default as we wont use the keyword suffix
                     elastalert_logger.warn('Warning: If query_key is a non-keyword field, you must set '
                                            'use_keyword_postfix to false, or add .keyword/.raw to your query_key.')
-        self.update_terms(args)
         
     def should_refresh_terms(self):
         return self.last_updated_at is None or self.last_updated_at < ( ts_now() - datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})) )
 
     def update_terms(self,args=None):
         try:
-            if self.should_refresh_terms():
-                self.get_all_terms(args=args)
+            self.get_all_terms(args=args)
         except Exception as e:
             # Refuse to start if we cannot get existing terms
             raise EAException('Error searching for existing terms: %s' % (repr(e))).with_traceback(sys.exc_info()[2])
@@ -784,8 +784,8 @@ class NewTermsRule(RuleType):
     def get_all_terms(self,args):
         """ Performs a terms aggregation for each field to get every existing term. """
 
-        self.es = kibana_adapter_client(self.rules)
-        window_size = datetime.timedelta(**self.rules.get('terms_window_size', {'days': 7}))
+        # terms_window_size : Default & Upperbound - 7 Days
+        window_size = min(datetime.timedelta(**self.rules.get('terms_window_size', {'days': 7})), datetime.timedelta(**{'days': 7}))
         
 
         if args and hasattr(args, 'start') and args.start:
@@ -796,7 +796,8 @@ class NewTermsRule(RuleType):
             end = ts_now()
 
         start = end - window_size
-        step = datetime.timedelta(**self.rules.get('window_step_size', {'days': 1}))
+        # window_step_size : Default - 1 Days, Lowerbound: 6 hours
+        step =  max( datetime.timedelta(**self.rules.get('window_step_size', {'days': 1})), datetime.timedelta(**{'hours': 6}) )
         
         for field in self.fields:
             tmp_start = start
@@ -955,7 +956,8 @@ class NewTermsRule(RuleType):
         return results
 
     def add_new_term_data(self, payload):
-        self.update_terms()
+        if self.should_refresh_terms():
+            self.update_terms()
         timestamp = list(payload.keys())[0]
         data = payload[timestamp]
         for field in self.fields:
@@ -1202,7 +1204,7 @@ class MetricAggregationRule(BaseAggregationRule):
         query = {self.metric_key: {self.rules['metric_agg_type']: {'field': self.rules['metric_agg_key']}}}
         if self.rules['metric_agg_type'] in self.allowed_percent_aggregations:
             query[self.metric_key][self.rules['metric_agg_type']]['percents'] = [self.rules['percentile_range']]
-            # query[self.metric_key][self.rules['metric_agg_type']]['keyed'] = True
+            query[self.metric_key][self.rules['metric_agg_type']]['keyed'] = False
         return query
 
     def check_matches(self, timestamp, query_key, aggregation_data):

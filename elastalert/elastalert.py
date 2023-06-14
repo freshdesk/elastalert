@@ -718,7 +718,10 @@ class ElastAlerter(object):
         buffer_time = rule.get('buffer_time', self.buffer_time)
         if rule.get('query_delay'):
             try:
-                buffer_time += rule['query_delay']
+                # buffer_time += rule['query_delay']
+                queryDelay = '0:0{}:00'.format(rule['query_delay']['minutes'])
+                queryDelay = datetime.datetime.strptime(queryDelay, "%H:%M:%S") - datetime.datetime.strptime("0:00:00", "%H:%M:%S")
+                buffer_time += queryDelay
             except Exception as e:
                 self.handle_error("[remove_old_events]Error parsing query_delay send time format %s" % e)
         for _id, timestamp in rule['processed_hits'].items():
@@ -1380,7 +1383,8 @@ class ElastAlerter(object):
             endtime = ts_to_dt(self.args.end)
         elif delay:
             try:
-                endtime = ts_now() - delay
+                # endtime = ts_now() - delay
+                endtime = ts_now() - datetime.timedelta(minutes=delay['minutes'])
             except Exception as e:
                 self.handle_error("[handle_rule_execution]Error parsing query_delay send time format %s" % e)
         else:

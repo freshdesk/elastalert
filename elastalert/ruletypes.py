@@ -1400,12 +1400,16 @@ class PercentageMatchRule(BaseAggregationRule):
         return {
             'percentage_match_aggs': {
                 'filters': {
-                    'other_bucket': True,
                     'filters': {
                         'match_bucket': {
                             'bool': {
                                 'must': self.match_bucket_filter
                             }
+                        },
+                        '_other_': {
+                            'bool': {
+                                'must_not': self.match_bucket_filter
+                           }
                         }
                     }
                 }

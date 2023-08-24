@@ -1621,11 +1621,17 @@ def test_percentage_match():
     assert rule.rules['aggregation_query_element'] == {
         'percentage_match_aggs': {
             'filters': {
-                'other_bucket': True,
                 'filters': {
                     'match_bucket': {
                         'bool': {
                             'must': {
+                                'term': 'term_val'
+                            }
+                        }
+                    },
+                    '_other_': {
+                        'bool': {
+                            'must_not': {
                                 'term': 'term_val'
                             }
                         }

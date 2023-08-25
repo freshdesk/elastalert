@@ -722,64 +722,101 @@ def test_new_term_nested_field():
     assert rule.matches[0]['new_value'] == 'key3'
     rule.matches = []
 
-# def test_new_term_refresh_interval():
+def test_new_term_window_updates():
 
-#     rules = {'fields': ['a'],
-#              'timestamp_field': '@timestamp',
-#              'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
-#              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'days': 1  }  }
-#     mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-#                                                                      {'key': 'key2', 'doc_count': 5}]}}}] }
+    rules = {'fields': ['a'],
+             'timestamp_field': '@timestamp',
+             'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
+             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'hours': 3  }, 'threshold': 20, 'threshold_window_size': {'hours': 1}  }
+    mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 5},
+                                                                     {'key': 'key2', 'doc_count': 5}]}}}] }
 
-#     #random_test_data
-#     data = { ts_now() : { "a": [] } }   
-
-#     with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
-#         mock_es.return_value = mock.Mock()
-#         mock_es.return_value.msearch.return_value = mock_res
-#         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+    #empty_test_data
+    time_pointer = ts_now()
 
 
-#         # Rule with refresh_interval not set, defaulting to 6 hours
-#         rule = NewTermsRule(rules)
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+        mock_es.return_value = mock.Mock()
+        mock_es.return_value.msearch.return_value = mock_res
+        mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+        rule = NewTermsRule(rules)
+
+    print("\n 1 ================================")
+    print(rule.term_windows['a'].values)
+    print(rule.term_windows['a'].count_dict)
+    print(rule.term_windows['a'].new_terms)
+    # key 2 keeps occuring every 1 hour
+    for i in range(4):
+        time_pointer += datetime.timedelta(hours=1)
+        data = { time_pointer : { "a": (['key2'],[5]) } }   
+        rule.add_new_term_data(data)
+
+    # 4 hours later, if key1 comes again, match should come
+    data = { time_pointer : { "a": (['key1'],[20]) } }   
+    rule.add_new_term_data(data)
+
+    print("\n 3 h ================================")
+    print(rule.term_windows['a'].values)
+    print(rule.term_windows['a'].count_dict)
+    print(rule.term_windows['a'].new_terms)
+
+    assert len(rule.matches) == 1
+
+    time_pointer += datetime.timedelta(hours=2, minutes=59)
+    data = { time_pointer : { "a": (['key1'],[20]) } }   
+    rule.add_new_term_data(data)
+    assert len(rule.matches) == 1
+
+    print("\n 5 h 59 m ================================")
+    print(rule.term_windows['a'].values)
+    print(rule.term_windows['a'].count_dict)
+    print(rule.term_windows['a'].new_terms)
+
+    time_pointer += datetime.timedelta(hours=3, minutes=1)
+    data = { time_pointer : { "a": (['key1'],[1]) } }   
+    rule.add_new_term_data(data)
+    assert len(rule.matches) == 1
+
+    print("\n 9 h ================================")
+    print(rule.term_windows['a'].values)
+    print(rule.term_windows['a'].count_dict)
+    print(rule.term_windows['a'].new_terms)
 
 
-#         # get_all_terms should not be called as last_updated will be less than now - 6 hours
-#         rule.add_new_term_data(data)
-#         assert rule.es.msearch.assert_called
-#         mock_es.return_value.msearch.reset_mock()
+    time_pointer += datetime.timedelta(minutes= 30)
+    data = { time_pointer : { "a": (['key1'],[19]) } }   
+    rule.add_new_term_data(data)
 
-#         # get_all_terms should be called when last_updated is none
-#         rule.last_updated_at = None
-#         rule.add_new_term_data(data)
-#         assert rule.es.msearch.assert_called_once 
-#         mock_es.return_value.msearch.reset_mock()
+   
+    assert len(rule.matches) == 2
 
-#         # get_all_terms should not be called as last_updated will not be less than now - 6 hours
-#         rule.last_updated_at = ts_now() - datetime.timedelta(**{'hours': 4})
-#         rule.add_new_term_data(data)
-#         assert not rule.es.msearch.called
+    print("\n 9 h 30 m ================================")
+    print(rule.term_windows['a'].values)
+    print(rule.term_windows['a'].count_dict)
+    print(rule.term_windows['a'].new_terms)
 
-#         # get_all_terms should be called as last_updated will be less than now - 6 hours
-#         rule.last_updated_at = ts_now() - datetime.timedelta(**{'hours': 7})
-#         rule.add_new_term_data(data)
-#         assert rule.es.msearch.assert_called_once 
-#         mock_es.return_value.msearch.reset_mock()
+    time_pointer += datetime.timedelta(minutes= 30)
+    data = { time_pointer : { "a": (['key2'],[21]) } }   
+    rule.add_new_term_data(data)
+    assert len(rule.matches) == 3
 
-#         # Rule with refresh_interval set to 2 hours
-#         rules["refresh_interval"] = {'hours': 2}
-#         rule = NewTermsRule(rules)
-#         mock_es.return_value.msearch.reset_mock()
 
-#         # get_all_terms should not be called as last_updated will not be less than now - 2 hours
-#         rule.last_updated_at = ts_now() - datetime.timedelta(**{'hours': 1})
-#         rule.add_new_term_data(data)
-#         assert not rule.es.msearch.called
+    print("\n 9 h 30 m ================================")
+    print(rule.term_windows['a'].values)
+    print(rule.term_windows['a'].count_dict)
+    print(rule.term_windows['a'].new_terms)
 
-#         # get_all_terms should be called as last_updated will be less than now - 2 hours
-#         rule.last_updated_at = ts_now() - datetime.timedelta(**{'hours': 3})
-#         rule.add_new_term_data(data)
-#         assert rule.es.msearch.assert_called_once 
+    time_pointer += datetime.timedelta(minutes= 40)
+    data = { time_pointer : { "a": (['key2'],[21]) } }   
+    rule.add_new_term_data(data)
+    assert len(rule.matches) == 3
+
+
+
+
+    
+
+    
 
 
 ## New implementation will never use with_terms 
@@ -917,7 +954,7 @@ def test_new_term_threshold():
 
     # changing threshold to 10 and threhold_duration to 2 hours
     rules['threshold'] = 10
-    rules['threshold_duration'] = {"hours" : 2}
+    rules['threshold_window_size'] = {"hours" : 2}
 
     # used for incrementing time
     time_pointer = ts_now()
@@ -978,7 +1015,7 @@ def test_new_term_bounds():
              'timestamp_field': '@timestamp',
              'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'days': 10  },
-             'window_step_size' : {'hours': 1  },'refresh_interval' : {'hours': 2  }, 'terms_size': 10000, 'threshold_duration': {"days": 3} }
+             'window_step_size' : {'hours': 1  },'refresh_interval' : {'hours': 2  }, 'terms_size': 10000, 'threshold_window_size': {"days": 3} }
       
     mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
                                                                      {'key': 'key2', 'doc_count': 5}]}}}] }
@@ -991,7 +1028,7 @@ def test_new_term_bounds():
     assert rule.window_size == datetime.timedelta(**{'days': 7})
     assert rule.step == datetime.timedelta(**{'hours': 6})
     assert rule.refresh_interval == datetime.timedelta(**{'hours': 6})
-    assert rule.threshold_duration == datetime.timedelta(**{'days': 2})
+    assert rule.threshold_window_size == datetime.timedelta(**{'days': 2})
     assert rule.terms_size == 1000
 
 

@@ -427,41 +427,47 @@ class TermsWindow:
         self.new_terms = {}
         self.count_dict = {}
 
-    def append_keys(self, timestamp, keys, counts):
-        for i in range(len(keys)):
-            self.append_key(keys[i], counts[i])
-
-        self.data.add((timestamp, keys,counts))
+    def add(self, timestamp, terms, counts):
+        for (term, count) in zip(terms, counts):
+            if term not in self.count_dict:
+                self.count_dict[term] = 0    
+            self.count_dict[term] += count
+            self.values.add(term)
+        self.data.add((timestamp, terms,counts))
         self.adjust_window(till=timestamp - self.term_window_size)
 
-    def append_key(self,key,count):
-        if key not in self.count_dict:
-            self.count_dict[key] = 0    
-        self.count_dict[key] += count
-        self.values.add(key)
+    def split(self, terms, counts):
+        unseen_terms = []
+        unseen_counts = []
+        seen_terms = []
+        seen_counts = []
+        for (term, count) in zip(terms, counts):
+            if term not in self.values:
+                unseen_terms.append(term)
+                unseen_counts.append(count)
+            else:
+                seen_terms.append(term)
+                seen_counts.append(count)
+        return seen_terms, seen_counts, unseen_terms, unseen_counts
 
-
-    def append_and_get_matches(self, timestamp, keys, counts):
-
+    def update_new_terms(self, timestamp, unseen_terms, unseen_counts):
         self.adjust_window(till = timestamp - self.term_window_size)
-        
-        matched_keys = []
+        for (term, count) in zip(unseen_terms, unseen_counts):
+            event = ({self.ts_field: timestamp}, count)
+            window = self.new_terms.setdefault( term , EventWindow(self.threshold_window_size, getTimestamp=self.get_ts))
+            window.append(event)
+
+    def get_matches(self, timestamp, unseen_terms, unseen_counts):
+        self.adjust_window(till = timestamp - self.term_window_size)
+        matched_terms = []
         matched_counts = []
-
-        for i in range(len(keys)):
-            if keys[i] not in self.values:
-                key = keys.pop(i)
-                count = counts.pop(i)
-                event = ({self.ts_field: timestamp}, count)
-                window = self.new_terms.setdefault( key , EventWindow(self.threshold_window_size, getTimestamp=self.get_ts))
-                window.append(event)
-                if window.count() >= self.threshold:
-                    matched_keys.append(key)
-                    matched_counts.append(window.count())
-                    self.new_terms.pop(key)
-        self.append_keys(timestamp,keys + matched_keys,counts + matched_counts)
-
-        return matched_keys, matched_counts
+        for (unseen_term, new_count) in zip(unseen_terms, unseen_counts):
+            window = self.new_terms.get(unseen_term )
+            if window.count() >= self.threshold:
+                matched_terms.append(unseen_term)
+                matched_counts.append(new_count)
+                self.new_terms.pop(unseen_term)
+        return matched_terms, matched_counts
         
     def adjust_window(self,till):
         while len(self.data)!=0 and self.data[0][0] < till:
@@ -1053,9 +1059,14 @@ class NewTermsRule(RuleType):
         for field in self.fields:
             lookup_key = self.get_lookup_key(field)
             keys, counts =  data[lookup_key]
-            unmatched_keys, unmatched_counts = self.term_windows[lookup_key].append_and_get_matches(timestamp, keys, counts)
+            term_window = self.term_windows[lookup_key]
+            seen_terms, seen_counts, unseen_terms, unseen_counts = term_window.split(keys, counts)
+            term_window.update_unseen_terms_window(timestamp, unseen_terms, unseen_counts)
+            matched_terms, matched_counts = term_window.get_matches(timestamp, unseen_terms, unseen_counts)
+            term_window.add(timestamp, seen_terms + matched_terms, seen_counts + matched_counts)
+            
             # append and get all match keys and counts
-            for (key, count) in zip(unmatched_keys, unmatched_counts):
+            for (key, count) in zip(matched_terms, matched_counts):
                 match = {
                     "field": lookup_key,
                     self.rules['timestamp_field']: timestamp,

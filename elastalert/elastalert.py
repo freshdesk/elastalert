@@ -455,7 +455,7 @@ class ElastAlerter(object):
 
     def get_new_terms_data(self, rule, starttime, endtime, field):
         new_terms = []
-        counts = []
+        new_counts = []
 
         rule_inst = rule["type"]
         try:
@@ -468,13 +468,14 @@ class ElastAlerter(object):
                 buckets = res['aggregations']['values']['buckets']
                 if type(field) == list:
                     for bucket in buckets:
-                        for pair in rule_inst.flatten_aggregation_hierarchy(bucket):
-                            new_terms += pair[0]
-                            counts += pair[1]
+                        keys, counts = rule_inst.flatten_aggregation_hierarchy(bucket)
+                        new_terms += keys
+                        new_counts += counts
 
-                else:     
-                    new_terms = [bucket['key'] for bucket in buckets]
-                    counts = [bucket['doc_count'] for bucket in buckets]
+                else:
+                    for bucket in buckets:
+                        new_terms.append(bucket['key'])
+                        new_counts.append(bucket['doc_count'])
                 
         except ElasticsearchException as e:
             if len(str(e)) > 1024:

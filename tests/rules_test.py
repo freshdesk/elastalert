@@ -740,11 +740,7 @@ def test_new_term_window_updates():
         mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
-
-    print("\n 1 ================================")
-    print(rule.term_windows['a'].values)
-    print(rule.term_windows['a'].count_dict)
-    print(rule.term_windows['a'].new_terms)
+    
     # key 2 keeps occuring every 1 hour
     for i in range(4):
         time_pointer += datetime.timedelta(hours=1)
@@ -754,109 +750,37 @@ def test_new_term_window_updates():
     # 4 hours later, if key1 comes again, match should come
     data = { time_pointer : { "a": (['key1'],[20]) } }   
     rule.add_new_term_data(data)
-
-    print("\n 3 h ================================")
-    print(rule.term_windows['a'].values)
-    print(rule.term_windows['a'].count_dict)
-    print(rule.term_windows['a'].new_terms)
-
     assert len(rule.matches) == 1
 
+    # if key1 comes again in the next 2 hour 59 minutes, match woundnt come, as it is now in existing terms
     time_pointer += datetime.timedelta(hours=2, minutes=59)
     data = { time_pointer : { "a": (['key1'],[20]) } }   
     rule.add_new_term_data(data)
     assert len(rule.matches) == 1
 
-    print("\n 5 h 59 m ================================")
-    print(rule.term_windows['a'].values)
-    print(rule.term_windows['a'].count_dict)
-    print(rule.term_windows['a'].new_terms)
-
+    # 3 hours later, if same key comes. it will be considered new term, but since threshold isnt reached no matches
     time_pointer += datetime.timedelta(hours=3, minutes=1)
     data = { time_pointer : { "a": (['key1'],[1]) } }   
     rule.add_new_term_data(data)
     assert len(rule.matches) == 1
 
-    print("\n 9 h ================================")
-    print(rule.term_windows['a'].values)
-    print(rule.term_windows['a'].count_dict)
-    print(rule.term_windows['a'].new_terms)
 
-
+    #in next 30 mins, threshold is reached and match is found
     time_pointer += datetime.timedelta(minutes= 30)
     data = { time_pointer : { "a": (['key1'],[19]) } }   
     rule.add_new_term_data(data)
-
-   
     assert len(rule.matches) == 2
 
-    print("\n 9 h 30 m ================================")
-    print(rule.term_windows['a'].values)
-    print(rule.term_windows['a'].count_dict)
-    print(rule.term_windows['a'].new_terms)
-
+    #another new term causing match
     time_pointer += datetime.timedelta(minutes= 30)
     data = { time_pointer : { "a": (['key2'],[21]) } }   
     rule.add_new_term_data(data)
     assert len(rule.matches) == 3
-
-
-    print("\n 9 h 30 m ================================")
-    print(rule.term_windows['a'].values)
-    print(rule.term_windows['a'].count_dict)
-    print(rule.term_windows['a'].new_terms)
 
     time_pointer += datetime.timedelta(minutes= 40)
     data = { time_pointer : { "a": (['key2'],[21]) } }   
     rule.add_new_term_data(data)
     assert len(rule.matches) == 3
-
-
-
-
-    
-
-    
-
-
-## New implementation will never use with_terms 
-# def test_new_term_with_terms():
-#     rules = {'fields': ['a'],
-#              'timestamp_field': '@timestamp',
-#              'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash', 'query_key': 'a',
-#              'window_step_size': {'days': 2},
-#              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-#     mock_res = {'responses' : [{'aggregations':  {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-#                                                                      {'key': 'key2', 'doc_count': 5}]}}}]}
-
-#     with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
-#         mock_es.return_value = mock.Mock()
-#         mock_es.return_value.msearch.return_value = mock_res
-#         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
-#         rule = NewTermsRule(rules)
-
-#         # Only 4 queries because of custom step size
-#         assert rule.es.msearch.call_count == 4
-
-#     # Key1 and key2 shouldn't cause a match
-#     terms = {ts_now(): [{'key': 'key1', 'doc_count': 1},
-#                         {'key': 'key2', 'doc_count': 1}]}
-#     rule.add_terms_data(terms)
-#     assert rule.matches == []
-
-#     # Key3 causes an alert for field a
-#     terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
-#     rule.add_terms_data(terms)
-#     assert len(rule.matches) == 1
-#     assert rule.matches[0]['new_field'] == 'a'
-#     assert rule.matches[0]['a'] == 'key3'
-#     rule.matches = []
-
-#     # Key3 doesn't cause another alert
-#     terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
-#     rule.add_terms_data(terms)
-#     assert rule.matches == []
-
 
 def test_new_term_with_composite_fields():
     rules = {'fields': [['a', 'b', 'c'], ['d', 'e.f']],
@@ -901,7 +825,6 @@ def test_new_term_with_composite_fields():
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
-
     # key3 already exists, and thus shouldn't cause a match
     data = {
         ts_now() : {
@@ -927,6 +850,61 @@ def test_new_term_with_composite_fields():
     assert rule.matches[0]['field'] == ('a', 'b', 'c')
     assert rule.matches[0]['new_value'] == ("key1","key2","key5")
     rule.matches = []
+
+    # testing same with Threshold Window and Threshold
+
+    rules['threshold'] = 10
+    rules['threshold_window_size'] = {'hours': 6} 
+    
+
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+        mock_es.return_value = mock.Mock()
+        mock_es.return_value.msearch.return_value = mock_res
+        mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+        rule = NewTermsRule(rules)
+
+    time_pointer = ts_now()
+
+    # will not cause match
+    data = {
+        time_pointer : {
+            ('a', 'b', 'c'):  ([("key1","key2","key4")],[1]),
+            ('d','e.f'):  ([],[])
+        }
+    }
+    rule.add_new_term_data(data)
+    assert len(rule.matches) == 0
+    rule.matches = []
+
+    # will not cause match, as threshold wont be reached
+    time_pointer += datetime.timedelta(hours = 1)
+    data = {
+        time_pointer : {
+            ('a', 'b', 'c'):  ([("key1","key2","key5")],[9]),
+            ('d','e.f'):  ([],[])
+        }
+    }
+    rule.add_new_term_data(data)
+    assert len(rule.matches) == 0
+    
+
+    # will cause match, as threshold will be reached
+    data = {
+        time_pointer : {
+            ('a', 'b', 'c'):  ([("key1","key2","key5")],[1]),
+            ('d','e.f'):  ([],[])
+        }
+    }
+    rule.add_new_term_data(data)
+    assert len(rule.matches) == 1
+    assert rule.matches[0]['field'] == ('a', 'b', 'c')
+    assert rule.matches[0]['new_value'] == ("key1","key2","key5")
+    rule.matches = []
+
+    #test composite flatten buckets
+    keys,counts = rule.flatten_aggregation_hierarchy(mock_res['responses'][0]['aggregations']['values']['buckets'])
+    assert keys == [('key1', 'key2', 'key3'), ('key1', 'key2', 'key4')]
+    assert counts == [3, 2]
 
 def test_new_term_threshold():
     rules = {'fields': ['a'],
@@ -986,7 +964,7 @@ def test_new_term_threshold():
     rule.add_new_term_data(data)
     assert len(rule.matches) == 0
 
-    # new value for field a with count 1 after 10 minutes
+    # new value for field a with count 2 after 10 minutes
     # should create a match as the total count stored for the last 2 hours would be 10
     time_pointer += datetime.timedelta(**{"minutes":10})
 
@@ -1030,6 +1008,46 @@ def test_new_term_bounds():
     assert rule.refresh_interval == datetime.timedelta(**{'hours': 6})
     assert rule.threshold_window_size == datetime.timedelta(**{'days': 2})
     assert rule.terms_size == 1000
+
+
+## New implementation will never use with_terms 
+# def test_new_term_with_terms():
+#     rules = {'fields': ['a'],
+#              'timestamp_field': '@timestamp',
+#              'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash', 'query_key': 'a',
+#              'window_step_size': {'days': 2},
+#              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
+#     mock_res = {'responses' : [{'aggregations':  {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
+#                                                                      {'key': 'key2', 'doc_count': 5}]}}}]}
+
+#     with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+#         mock_es.return_value = mock.Mock()
+#         mock_es.return_value.msearch.return_value = mock_res
+#         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+#         rule = NewTermsRule(rules)
+
+#         # Only 4 queries because of custom step size
+#         assert rule.es.msearch.call_count == 4
+
+#     # Key1 and key2 shouldn't cause a match
+#     terms = {ts_now(): [{'key': 'key1', 'doc_count': 1},
+#                         {'key': 'key2', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert rule.matches == []
+
+#     # Key3 causes an alert for field a
+#     terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert len(rule.matches) == 1
+#     assert rule.matches[0]['new_field'] == 'a'
+#     assert rule.matches[0]['a'] == 'key3'
+#     rule.matches = []
+
+#     # Key3 doesn't cause another alert
+#     terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert rule.matches == []
+
 
 
 def test_flatline():

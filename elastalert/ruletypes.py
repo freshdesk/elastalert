@@ -429,16 +429,21 @@ class TermsWindow:
 
     def append_keys(self, timestamp, keys, counts):
         for i in range(len(keys)):
-            if keys[i] not in self.count_dict:
-                self.count_dict[keys[i]] = 0    
-            self.count_dict[keys[i]] += counts[i]
-            self.values.add(keys[i])
+            self.append_key(keys[i], counts[i])
+
         self.data.add((timestamp, keys,counts))
         self.adjust_window(till=timestamp - self.term_window_size)
 
+    def append_key(self,key,count):
+        if key not in self.count_dict:
+            self.count_dict[key] = 0    
+        self.count_dict[key] += count
+        self.values.add(key)
+
+
     def append_and_get_matches(self, timestamp, keys, counts):
 
-        self.adjust_window(timestamp - self.term_window_size)
+        self.adjust_window(till = timestamp - self.term_window_size)
         
         matched_keys = []
         matched_counts = []
@@ -457,20 +462,6 @@ class TermsWindow:
         self.append_keys(timestamp,keys + matched_keys,counts + matched_counts)
 
         return matched_keys, matched_counts
-
-    def append_buckets(self, timestamp, buckets):
-        keys = []
-        counts = []
-        for bucket in buckets:
-            if bucket['key'] not in self.count_dict:
-                self.count_dict[bucket['key']] = 0
-            self.count_dict[bucket['key']] += bucket['doc_count']
-            keys.append(bucket['key'])
-            self.values.add(bucket['key'])
-            counts.append(bucket['doc_count'])
-        self.data.add((timestamp, keys,counts))
-        self.adjust_window(till=timestamp - self.term_window_size)
-
         
     def adjust_window(self,till):
         while len(self.data)!=0 and self.data[0][0] < till:
@@ -755,7 +746,8 @@ class NewTermsRule(RuleType):
         self.ts_field = self.rules.get('timestamp_field', '@timestamp')
         self.get_ts = new_get_event_ts(self.ts_field)
         self.new_terms = {}
-
+        
+        self.threshold = rule.get('threshold',0)
 
         # terms_window_size : Default & Upperbound - 7 Days
         self.window_size = min(datetime.timedelta(**self.rules.get('terms_window_size', {'days': 7})), datetime.timedelta(**{'days': 7}))
@@ -846,7 +838,7 @@ class NewTermsRule(RuleType):
 
         # For composite keys, we will need to perform sub-aggregations
         if type(field) == list:
-            self.term_windows.setdefault(tuple(field), TermsWindow(self.window_size, self.ts_field , self.rules.get('threshold',0), self.threshold_window_size, self.get_ts))
+            self.term_windows.setdefault(tuple(field), TermsWindow(self.window_size, self.ts_field , self.threshold, self.threshold_window_size, self.get_ts))
             level = query['aggs']
             # Iterate on each part of the composite key and add a sub aggs clause to the elastic search query
             for i, sub_field in enumerate(field):
@@ -859,7 +851,7 @@ class NewTermsRule(RuleType):
                     level['values']['aggs'] = {'values': {'terms': copy.deepcopy(field_name)}}
                     level = level['values']['aggs']
         else:
-            self.term_windows.setdefault(field, TermsWindow(self.window_size, self.ts_field , self.rules.get('threshold',0), self.threshold_window_size, self.get_ts))
+            self.term_windows.setdefault(field, TermsWindow(self.window_size, self.ts_field , self.threshold, self.threshold_window_size, self.get_ts))
             # For non-composite keys, only a single agg is needed
             if self.rules.get('use_keyword_postfix', False):# making it false by default as we wont use the keyword suffix
                 field_name['field'] = add_raw_postfix(field, True)
@@ -895,24 +887,32 @@ class NewTermsRule(RuleType):
                 
                 res = self.es.msearch(msearch_query,request_timeout=50)
                 res = res['responses'][0] 
-                keys = []
-                counts = []
+                
                 if 'aggregations' in res:
                     buckets = res['aggregations']['values']['buckets']
+
+                    term_window = self.term_windows[self.get_lookup_key(field)]
+                    keys = []
+                    counts = []
+
                     if type(field) == list:
                         # For composite keys, make the lookup based on all fields
                         # Make it a tuple since it can be hashed and used in dictionary lookups
                         for bucket in buckets:
                             # We need to walk down the hierarchy and obtain the value at each level
                             keys, counts = self.flatten_aggregation_hierarchy(bucket)
-                            self.term_windows[tuple(field)].append_keys(tmp_end,keys,counts)
                     else:
-                        self.term_windows[field].append_buckets(tmp_end,buckets)
+                        for bucket in buckets:
+                            keys.append(bucket['key'])
+                            counts.append(bucket['doc_count'])
+
+                    term_window.append_keys(tmp_end,keys,counts)
+
                 else:
                     if type(field) == list:
-                        self.term_windows.setdefault(tuple(field), TermsWindow(self.window_size, self.ts_field , self.rules.get('threshold',0), self.threshold_window_size, self.get_ts))
+                        self.term_windows.setdefault(tuple(field), TermsWindow(self.window_size, self.ts_field , self.threshold, self.threshold_window_size, self.get_ts))
                     else:
-                        self.term_windows.setdefault(field, TermsWindow(self.window_size, self.ts_field , self.rules.get('threshold',0), self.threshold_window_size, self.get_ts))
+                        self.term_windows.setdefault(field, TermsWindow(self.window_size, self.ts_field , self.threshold, self.threshold_window_size, self.get_ts))
                 if tmp_start == tmp_end:
                     break
                 tmp_start = tmp_end
@@ -1029,17 +1029,17 @@ class NewTermsRule(RuleType):
         counts = []
         # There are more aggregation hierarchies left.  Traverse them.
         if 'values' in root:
-            pair = self.flatten_aggregation_hierarchy(root['values']['buckets'], hierarchy_tuple + (root['key'],))
-            keys += pair[0]
-            counts += pair[1]
+            new_terms, new_counts = self.flatten_aggregation_hierarchy(root['values']['buckets'], hierarchy_tuple + (root['key'],))
+            keys += new_terms
+            counts += new_counts
         else:
             # We've gotten to a sub-aggregation, which may have further sub-aggregations
             # See if we need to traverse further
             for node in root:
                 if 'values' in node:
-                    pair = self.flatten_aggregation_hierarchy(node, hierarchy_tuple)
-                    keys += pair[0]
-                    counts += pair[1]
+                    new_terms, new_counts = self.flatten_aggregation_hierarchy(node, hierarchy_tuple)
+                    keys += new_terms
+                    counts += new_counts
                 else:
                     keys.append(hierarchy_tuple + (node['key'],))
                     counts.append(node['doc_count'])
@@ -1051,7 +1051,7 @@ class NewTermsRule(RuleType):
         timestamp = list(payload.keys())[0]
         data = payload[timestamp]
         for field in self.fields:
-            lookup_key =tuple(field) if type(field) == list else field
+            lookup_key = self.get_lookup_key(field)
             keys, counts =  data[lookup_key]
             unmatched_keys, unmatched_counts = self.term_windows[lookup_key].append_and_get_matches(timestamp, keys, counts)
             # append and get all match keys and counts
@@ -1102,6 +1102,9 @@ class NewTermsRule(RuleType):
                                  'new_field': field}
                         self.add_match(match)
                         self.seen_values[field].append(bucket['key'])
+
+    def get_lookup_key(self,field):
+        return tuple(field) if type(field) == list else field
 
 
 class CardinalityRule(RuleType):

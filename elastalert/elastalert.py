@@ -483,7 +483,7 @@ class ElastAlerter(object):
             self.handle_error('Error running new terms query: %s' % (e), {'rule': rule['name'], 'query': query})
             return []
         
-        return new_terms, counts
+        return new_terms, new_counts
 
 
             

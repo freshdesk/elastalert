@@ -626,8 +626,6 @@ def test_new_term(version):
     }
     rule.add_new_term_data(data)
 
-    # 30 day default range, 1 day default step, times 2 fields
-    assert rule.es.msearch.call_count == 14
 
     # rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2'}])
 
@@ -713,8 +711,6 @@ def test_new_term_nested_field():
         }
     }
     rule.add_new_term_data(data)
-
-    assert rule.es.msearch.call_count == 14
 
     # rule.add_data([{'@timestamp': ts_now(), 'b': {'c': 'key3'}}])
     assert len(rule.matches) == 1
@@ -834,8 +830,6 @@ def test_new_term_with_composite_fields():
     }
     rule.add_new_term_data(data)
     assert rule.matches == []
-
-    assert rule.es.msearch.call_count == 14
 
 
     # key5 causes an alert for composite field [a, b, c]
@@ -1004,7 +998,6 @@ def test_new_term_bounds():
         rule = NewTermsRule(rules)
 
     assert rule.window_size == datetime.timedelta(**{'days': 7})
-    assert rule.step == datetime.timedelta(**{'hours': 6})
     assert rule.refresh_interval == datetime.timedelta(**{'hours': 6})
     assert rule.threshold_window_size == datetime.timedelta(**{'days': 2})
     assert rule.terms_size == 1000

@@ -412,9 +412,16 @@ class EventWindow(object):
             self.running_count += event[1]
         self.data.rotate(-rotation)
 
-# For each field, a term window is created. Their new_term_windows are maintained within
 class TermsWindow:
 
+    """ For each field configured in new_term rule, This term window is created and maintained.
+    A sliding window is maintained and count of all the existing terms are stored.
+    
+    data - Sliding window which holds the groups of terms and their counts segregated by timestamp they were seen
+    existing_terms - A set containing existing terms.
+    new_terms - Dictionary of EventWindows created for new terms.
+    count_dict - Dictionary containing the count of existing terms. When something is added to or popped from data, this count is manipulated
+    """
     def __init__(self, term_window_size, ts_field , threshold, threshold_window_size, get_ts):
         self.term_window_size = term_window_size
         self.ts_field = ts_field
@@ -422,27 +429,30 @@ class TermsWindow:
         self.threshold_window_size = threshold_window_size
         self.get_ts = get_ts
 
-        self.data = sortedlist(key= lambda x: x[0])
-        self.values = set()
+        self.data = sortedlist(key= lambda x: x[0]) #sorted by timestamp
+        self.existing_terms = set()
         self.new_terms = {}
         self.count_dict = {}
 
+    """ used to add new terms and their counts with their timestamp """
     def add(self, timestamp, terms, counts):
         for (term, count) in zip(terms, counts):
             if term not in self.count_dict:
                 self.count_dict[term] = 0    
             self.count_dict[term] += count
-            self.values.add(term)
+            self.existing_terms.add(term)
         self.data.add((timestamp, terms,counts))
-        self.adjust_window(till=timestamp - self.term_window_size)
+        self.adjust_window()
 
-    def split(self, terms, counts):
+    """ function to split new terms and existing terms given timestamp, terms and counts"""
+    def split(self,timestamp, terms, counts):
         unseen_terms = []
         unseen_counts = []
         seen_terms = []
         seen_counts = []
+        self.adjust_window(till= timestamp - self.term_window_size)
         for (term, count) in zip(terms, counts):
-            if term not in self.values:
+            if term not in self.existing_terms:
                 unseen_terms.append(term)
                 unseen_counts.append(count)
             else:
@@ -450,33 +460,43 @@ class TermsWindow:
                 seen_counts.append(count)
         return seen_terms, seen_counts, unseen_terms, unseen_counts
 
+    """ function to uodare the new terms windows"""
     def update_new_terms(self, timestamp, unseen_terms, unseen_counts):
-        self.adjust_window(till = timestamp - self.term_window_size)
         for (term, count) in zip(unseen_terms, unseen_counts):
             event = ({self.ts_field: timestamp}, count)
             window = self.new_terms.setdefault( term , EventWindow(self.threshold_window_size, getTimestamp=self.get_ts))
             window.append(event)
 
+
+    """function to get the new_terms that have crossed threshold"""
     def get_matches(self, timestamp, unseen_terms, unseen_counts):
-        self.adjust_window(till = timestamp - self.term_window_size)
         matched_terms = []
         matched_counts = []
-        for (unseen_term, new_count) in zip(unseen_terms, unseen_counts):
-            window = self.new_terms.get(unseen_term )
+        for (unseen_term, unseen_count) in zip(unseen_terms, unseen_counts):
+            window = self.new_terms.get(unseen_term)
             if window.count() >= self.threshold:
                 matched_terms.append(unseen_term)
-                matched_counts.append(new_count)
+                matched_counts.append(unseen_count)
                 self.new_terms.pop(unseen_term)
         return matched_terms, matched_counts
         
-    def adjust_window(self,till):
+    """function to adjust the terms_window and existing_terms
+    all the events that doesn't fall in the terms_window durartion are popped from data and their counts are subtracted from count_dict
+    if certain term's count reaches 0, they are removed from count_dict and existing_terms, i.e they have not occured in the past terms_window duration"""
+    def adjust_window(self, till=None):
+        if len(self.data)==0:
+            return
+
+        if till == None:
+            till = self.data[-1][0] - self.term_window_size
+
         while len(self.data)!=0 and self.data[0][0] < till:
             timestamp, keys, counts = self.data.pop(0)
             for i in range(len(keys)):
                 self.count_dict[keys[i]] -= counts[i]
                 if self.count_dict[keys[i]] <= 0:
                     self.count_dict.pop(keys[i])
-                    self.values.discard(keys[i])
+                    self.existing_terms.discard(keys[i])
 
     
 
@@ -758,8 +778,7 @@ class NewTermsRule(RuleType):
         # terms_window_size : Default & Upperbound - 7 Days
         self.window_size = min(datetime.timedelta(**self.rules.get('terms_window_size', {'days': 7})), datetime.timedelta(**{'days': 7}))
         
-        # window_step_size : Default - 1 Days, Lowerbound: 6 hours
-        self.step =  max( datetime.timedelta(**self.rules.get('window_step_size', {'days': 1})), datetime.timedelta(**{'hours': 6}) )
+        self.step =  datetime.timedelta(**{'hours': 1})
         
         # refresh_interval : Default - 6 hours, Lowerbound: 6 hours
         self.refresh_interval =  max( datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})), datetime.timedelta(**{'hours': 6}) )
@@ -912,7 +931,7 @@ class NewTermsRule(RuleType):
                             keys.append(bucket['key'])
                             counts.append(bucket['doc_count'])
 
-                    term_window.append_keys(tmp_end,keys,counts)
+                    term_window.add(tmp_end,keys,counts)
 
                 else:
                     if type(field) == list:
@@ -927,7 +946,7 @@ class NewTermsRule(RuleType):
                 
 
             for key, window in self.term_windows.items():
-                if not window.values:
+                if not window.existing_terms:
                     if type(key) == tuple:
                         # If we don't have any results, it could either be because of the absence of any baseline data
                         # OR it may be because the composite key contained a non-primitive type.  Either way, give the
@@ -939,7 +958,7 @@ class NewTermsRule(RuleType):
                     else:
                         elastalert_logger.info('Found no values for %s' % (field))
                     continue
-                elastalert_logger.info('Found %s unique values for %s' % (len(window.values), key))
+                elastalert_logger.info('Found %s unique values for %s' % (len(window.existing_terms), key))
         # self.last_updated_at = ts_now()
 
     def flatten_aggregation_hierarchy(self, root, hierarchy_tuple=()):
@@ -1060,10 +1079,10 @@ class NewTermsRule(RuleType):
             lookup_key = self.get_lookup_key(field)
             keys, counts =  data[lookup_key]
             term_window = self.term_windows[lookup_key]
-            seen_terms, seen_counts, unseen_terms, unseen_counts = term_window.split(keys, counts)
-            term_window.update_unseen_terms_window(timestamp, unseen_terms, unseen_counts)
-            matched_terms, matched_counts = term_window.get_matches(timestamp, unseen_terms, unseen_counts)
-            term_window.add(timestamp, seen_terms + matched_terms, seen_counts + matched_counts)
+            seen_terms, seen_counts, unseen_terms, unseen_counts = term_window.split(timestamp,keys, counts) # Split the new_terms and existing terms with their counts based on the timestamp
+            term_window.update_new_terms(timestamp, unseen_terms, unseen_counts) # Update the new_term_windows for the new_terms
+            matched_terms, matched_counts = term_window.get_matches(timestamp, unseen_terms, unseen_counts) # get the new_terms that have crossed the threshold
+            term_window.add(timestamp, seen_terms + matched_terms, seen_counts + matched_counts) 
             
             # append and get all match keys and counts
             for (key, count) in zip(matched_terms, matched_counts):

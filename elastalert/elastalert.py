@@ -492,9 +492,9 @@ class ElastAlerter(object):
         data = {}
 
         for field in rule['fields']:
-            new_terms, counts = self.get_new_terms_data(rule,starttime,endtime,field)
+            new_terms, new_counts = self.get_new_terms_data(rule,starttime,endtime,field)
             self.thread_data.num_hits += len(new_terms)
-            field_data = ( new_terms, counts )
+            field_data = ( new_terms, new_counts )
             if type(field) == list:
                 data[tuple(field)] = field_data
             else:

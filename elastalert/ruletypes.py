@@ -5,7 +5,6 @@ import sys
 import time
 import itertools
 
-
 from sortedcontainers import SortedKeyList as sortedlist
 
 from elastalert.util import (add_raw_postfix, dt_to_ts, EAException, elastalert_logger, elasticsearch_client,
@@ -417,10 +416,10 @@ class TermsWindow:
     """ For each field configured in new_term rule, This term window is created and maintained.
     A sliding window is maintained and count of all the existing terms are stored.
     
-    data - Sliding window which holds the groups of terms and their counts segregated by timestamp they were seen
-    existing_terms - A set containing existing terms.
+    data - Sliding window which holds the queried terms and counts along with timestamp. This list is sorted in ascending order based on the timestamp
+    existing_terms - A set containing existing terms. mainly used for looking up new terms.
     new_terms - Dictionary of EventWindows created for new terms.
-    count_dict - Dictionary containing the count of existing terms. When something is added to or popped from data, this count is manipulated
+    count_dict - Dictionary containing the count of existing terms. When something is added to or popped from the sliding window - data, this count is updated
     """
     def __init__(self, term_window_size, ts_field , threshold, threshold_window_size, get_ts):
         self.term_window_size = term_window_size
@@ -434,7 +433,7 @@ class TermsWindow:
         self.new_terms = {}
         self.count_dict = {}
 
-    """ used to add new terms and their counts with their timestamp """
+    """ used to add new terms and their counts for a timestamp into the sliding window - data """
     def add(self, timestamp, terms, counts):
         for (term, count) in zip(terms, counts):
             if term not in self.count_dict:
@@ -444,13 +443,13 @@ class TermsWindow:
         self.data.add((timestamp, terms,counts))
         self.adjust_window()
 
-    """ function to split new terms and existing terms given timestamp, terms and counts"""
+    """ function to split new terms and existing terms when given timestamp, terms and counts"""
     def split(self,timestamp, terms, counts):
         unseen_terms = []
         unseen_counts = []
         seen_terms = []
         seen_counts = []
-        self.adjust_window(till= timestamp - self.term_window_size)
+        self.adjust_window(till= timestamp - self.term_window_size) 
         for (term, count) in zip(terms, counts):
             if term not in self.existing_terms:
                 unseen_terms.append(term)
@@ -460,7 +459,7 @@ class TermsWindow:
                 seen_counts.append(count)
         return seen_terms, seen_counts, unseen_terms, unseen_counts
 
-    """ function to uodare the new terms windows"""
+    """ function to update the new terms windows"""
     def update_new_terms(self, timestamp, unseen_terms, unseen_counts):
         for (term, count) in zip(unseen_terms, unseen_counts):
             event = ({self.ts_field: timestamp}, count)
@@ -468,7 +467,7 @@ class TermsWindow:
             window.append(event)
 
 
-    """function to get the new_terms that have crossed threshold"""
+    """function to get the matched new_terms that have crossed the threshold configured"""
     def get_matches(self, timestamp, unseen_terms, unseen_counts):
         matched_terms = []
         matched_counts = []
@@ -480,9 +479,9 @@ class TermsWindow:
                 self.new_terms.pop(unseen_term)
         return matched_terms, matched_counts
         
-    """function to adjust the terms_window and existing_terms
-    all the events that doesn't fall in the terms_window durartion are popped from data and their counts are subtracted from count_dict
-    if certain term's count reaches 0, they are removed from count_dict and existing_terms, i.e they have not occured in the past terms_window duration"""
+    """ function to adjust the sliding window list - data and the set - existing_terms
+    all the events with their timestamp that doesn't fall in the terms_window durartion are popped and the counts of keys in popped events are subtracted from count_dict
+    After subtraction, if the term's count reaches 0, they are removed from count_dict and existing_terms, i.e they have not occured even once in the past terms_window duration"""
     def adjust_window(self, till=None):
         if len(self.data)==0:
             return
@@ -780,10 +779,7 @@ class NewTermsRule(RuleType):
         
         self.step =  datetime.timedelta(**{'hours': 1})
         
-        # refresh_interval : Default - 6 hours, Lowerbound: 6 hours
-        self.refresh_interval =  max( datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})), datetime.timedelta(**{'hours': 6}) )
-
-        # refresh_interval : Default - 500, Upperbound: 1000
+        # terms_size : Default - 500, Upperbound: 1000
         self.terms_size = min(self.rules.get('terms_size', 500),1000)
 
         # threshold_window_size

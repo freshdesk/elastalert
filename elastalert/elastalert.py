@@ -453,52 +453,26 @@ class ElastAlerter(object):
 
         return hits
 
-    def get_new_terms_data(self, rule, starttime, endtime, field):
-        new_terms = []
-        new_counts = []
-
-        rule_inst = rule["type"]
+    
+    def get_terms_data(self,rule, starttime, endtime):
+        data = {}
+        rule_inst = rule['type']
         try:
-            query = rule_inst.get_new_term_query(starttime,endtime,field)
-            request = get_msearch_query(query,rule)
-            res = self.thread_data.current_es.msearch(body=request)
-            res = res['responses'][0] 
-
-            if 'aggregations' in res:
-                buckets = res['aggregations']['values']['buckets']
+            for field in rule['fields']:
+                terms, counts = rule_inst.get_terms_data(self.thread_data.current_es,starttime,endtime,field)
+                self.thread_data.num_hits += len(terms)
+                terms_counts_pair = ( terms, counts )
                 if type(field) == list:
-                    for bucket in buckets:
-                        keys, counts = rule_inst.flatten_aggregation_hierarchy(bucket)
-                        new_terms += keys
-                        new_counts += counts
-
+                    data[tuple(field)] = terms_counts_pair
                 else:
-                    for bucket in buckets:
-                        new_terms.append(bucket['key'])
-                        new_counts.append(bucket['doc_count'])
-                
+                    data[field] = terms_counts_pair
         except ElasticsearchException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
-            self.handle_error('Error running new terms query: %s' % (e), {'rule': rule['name'], 'query': query})
-            return []
+            self.handle_error('Error running new terms query: %s' % (e), {'rule': rule['name'], 'query': rule_inst.get_new_term_query(starttime, endtime,field)})
+            return {endtime: {}}
+
         
-        return new_terms, new_counts
-
-
-            
-
-    def get_new_terms(self,rule, starttime, endtime):
-        data = {}
-
-        for field in rule['fields']:
-            new_terms, new_counts = self.get_new_terms_data(rule,starttime,endtime,field)
-            self.thread_data.num_hits += len(new_terms)
-            field_data = ( new_terms, new_counts )
-            if type(field) == list:
-                data[tuple(field)] = field_data
-            else:
-                data[field] = field_data
         
         lt = rule.get('use_local_time')
         status_log = "Queried rule %s from %s to %s: %s / %s hits" % (
@@ -756,7 +730,7 @@ class ElastAlerter(object):
         rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
         index = self.get_index(rule, start, end)
         if isinstance(rule_inst, NewTermsRule):
-            data = self.get_new_terms(rule, start, end)
+            data = self.get_terms_data(rule, start, end)
         elif rule.get('use_count_query'):
             data = self.get_hits_count(rule, start, end, index)
         elif rule.get('use_terms_query'):
@@ -777,7 +751,7 @@ class ElastAlerter(object):
             return False
         elif data:
             if isinstance(rule_inst, NewTermsRule):
-                rule_inst.add_new_term_data(data)
+                rule_inst.add_terms_data(data)
             elif rule.get('use_count_query'):
                 rule_inst.add_count_data(data)
             elif rule.get('use_terms_query'):

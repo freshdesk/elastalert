@@ -624,7 +624,7 @@ def test_new_term(version):
             "b": (["key2"], [1])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
 
 
     # rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2'}])
@@ -638,7 +638,7 @@ def test_new_term(version):
             "b": ([],[])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     # rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
     assert rule.matches == []
 
@@ -649,7 +649,7 @@ def test_new_term(version):
             "b": (["key3"],[1])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
 
     #rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
     assert len(rule.matches) == 1
@@ -664,7 +664,7 @@ def test_new_term(version):
             "b": (["key3"],[1])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     # rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
     assert rule.matches == []
 
@@ -681,7 +681,7 @@ def test_new_term(version):
     #         "b": []
     #     }
     # }
-    # rule.add_new_term_data(data)
+    # rule.add_terms_data(data)
     # #rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
     # assert len(rule.matches) == 1
     # assert rule.matches[0]['missing_field'] == 'b'
@@ -710,7 +710,7 @@ def test_new_term_nested_field():
             "b.c": (["key3"],[1])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
 
     # rule.add_data([{'@timestamp': ts_now(), 'b': {'c': 'key3'}}])
     assert len(rule.matches) == 1
@@ -741,41 +741,41 @@ def test_new_term_window_updates():
     for i in range(4):
         time_pointer += datetime.timedelta(hours=1)
         data = { time_pointer : { "a": (['key2'],[5]) } }   
-        rule.add_new_term_data(data)
+        rule.add_terms_data(data)
 
     # 4 hours later, if key1 comes again, match should come
     data = { time_pointer : { "a": (['key1'],[20]) } }   
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
 
     # if key1 comes again in the next 2 hour 59 minutes, match woundnt come, as it is now in existing terms
     time_pointer += datetime.timedelta(hours=2, minutes=59)
     data = { time_pointer : { "a": (['key1'],[20]) } }   
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
 
     # 3 hours later, if same key comes. it will be considered new term, but since threshold isnt reached no matches
     time_pointer += datetime.timedelta(hours=3, minutes=1)
     data = { time_pointer : { "a": (['key1'],[1]) } }   
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
 
 
     #in next 30 mins, threshold is reached and match is found
     time_pointer += datetime.timedelta(minutes= 30)
     data = { time_pointer : { "a": (['key1'],[19]) } }   
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 2
 
     #another new term causing match
     time_pointer += datetime.timedelta(minutes= 30)
     data = { time_pointer : { "a": (['key2'],[21]) } }   
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 3
 
     time_pointer += datetime.timedelta(minutes= 40)
     data = { time_pointer : { "a": (['key2'],[21]) } }   
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 3
 
 def test_new_term_with_composite_fields():
@@ -828,7 +828,7 @@ def test_new_term_with_composite_fields():
             tuple(['d','e.f']):  ([],[])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert rule.matches == []
 
 
@@ -839,7 +839,7 @@ def test_new_term_with_composite_fields():
             ('d','e.f'):  ([],[])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
     assert rule.matches[0]['field'] == ('a', 'b', 'c')
     assert rule.matches[0]['new_value'] == ("key1","key2","key5")
@@ -866,7 +866,7 @@ def test_new_term_with_composite_fields():
             ('d','e.f'):  ([],[])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 0
     rule.matches = []
 
@@ -878,7 +878,7 @@ def test_new_term_with_composite_fields():
             ('d','e.f'):  ([],[])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 0
     
 
@@ -889,7 +889,7 @@ def test_new_term_with_composite_fields():
             ('d','e.f'):  ([],[])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
     assert rule.matches[0]['field'] == ('a', 'b', 'c')
     assert rule.matches[0]['new_value'] == ("key1","key2","key5")
@@ -921,7 +921,7 @@ def test_new_term_threshold():
             ('a'):  (["key2"],[1])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
 
     # changing threshold to 10 and threhold_duration to 2 hours
@@ -942,7 +942,7 @@ def test_new_term_threshold():
             ('a'):  (["key2"],[8])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 0
 
 
@@ -955,7 +955,7 @@ def test_new_term_threshold():
             ('a'):  (["key2"],[8])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 0
 
     # new value for field a with count 2 after 10 minutes
@@ -967,7 +967,7 @@ def test_new_term_threshold():
             ('a'):  (["key1","key2"],[1,2])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
 
     # no new matches should be added, when the rule crosses the threshold the second time
@@ -979,7 +979,7 @@ def test_new_term_threshold():
             ('a'):  (["key2"],[20])
         }
     }
-    rule.add_new_term_data(data)
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
 
 def test_new_term_bounds():

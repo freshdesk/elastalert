@@ -891,6 +891,32 @@ class NewTermsRule(RuleType):
 
         return query
 
+    def get_terms_data(self, es, starttime, endtime, field, request_timeout= None):
+        terms = []
+        counts = []
+        query = self.get_new_term_query(starttime,endtime,field)
+        request = get_msearch_query(query,self.rules)
+        
+        if request_timeout == None:
+            res = es.msearch(body=request) 
+        else:
+            res = es.msearch(body=request, request_timeout=request_timeout)
+        res = res['responses'][0] 
+
+        if 'aggregations' in res:
+            buckets = res['aggregations']['values']['buckets']
+            if type(field) == list:
+                for bucket in buckets:
+                    keys, doc_counts = self.flatten_aggregation_hierarchy(bucket)
+                    terms += keys
+                    counts += doc_counts
+            else:
+                for bucket in buckets:
+                    terms.append(bucket['key'])
+                    counts.append(bucket['doc_count'])
+
+        return terms, counts
+
 
 
 
@@ -908,52 +934,18 @@ class NewTermsRule(RuleType):
         
         for field in self.fields:
             tmp_start = start
-            tmp_end = min(start + self.step, end)
-            query = self.get_new_term_query(tmp_start,tmp_end,field)
-
+            
             # Query the entire time range in small chunks
             while tmp_start < end:
-                
-                msearch_query = get_msearch_query(query,self.rules)
-                
-                res = self.es.msearch(msearch_query,request_timeout=50)
-                res = res['responses'][0] 
-                
-                if 'aggregations' in res:
-                    buckets = res['aggregations']['values']['buckets']
-
-                    term_window = self.term_windows[self.get_lookup_key(field)]
-                    keys = []
-                    counts = []
-
-                    if type(field) == list:
-                        # For composite keys, make the lookup based on all fields
-                        # Make it a tuple since it can be hashed and used in dictionary lookups
-                        for bucket in buckets:
-                            # We need to walk down the hierarchy and obtain the value at each level
-                            keys, counts = self.flatten_aggregation_hierarchy(bucket)
-                    else:
-                        for bucket in buckets:
-                            keys.append(bucket['key'])
-                            counts.append(bucket['doc_count'])
-
-                    term_window.add(tmp_end,keys,counts)
-
-                else:
-                    if type(field) == list:
-                        self.term_windows.setdefault(tuple(field), TermsWindow(self.window_size, self.ts_field , self.threshold, self.threshold_window_size, self.get_ts))
-                    else:
-                        self.term_windows.setdefault(field, TermsWindow(self.window_size, self.ts_field , self.threshold, self.threshold_window_size, self.get_ts))
-                if tmp_start == tmp_end:
-                    break
-                tmp_start = tmp_end
                 tmp_end = min(tmp_start + self.step, end)
-                query = self.get_new_term_query(tmp_start,tmp_end,field)
+                terms, counts = self.get_terms_data(self.es, tmp_start, tmp_end, field, request_timeout=50)
+                self.term_windows[self.get_lookup_key(field)].add(tmp_end,terms,counts)
+                tmp_start = tmp_end
                 
 
-            for key, window in self.term_windows.items():
+            for lookup_key, window in self.term_windows.items():
                 if not window.existing_terms:
-                    if type(key) == tuple:
+                    if type(lookup_key) == tuple:
                         # If we don't have any results, it could either be because of the absence of any baseline data
                         # OR it may be because the composite key contained a non-primitive type.  Either way, give the
                         # end-users a heads up to help them debug what might be going on.
@@ -964,7 +956,7 @@ class NewTermsRule(RuleType):
                     else:
                         elastalert_logger.info('Found no values for %s' % (field))
                     continue
-                elastalert_logger.info('Found %s unique values for %s' % (len(window.existing_terms), key))
+                elastalert_logger.info('Found %s unique values for %s' % (len(window.existing_terms), lookup_key))
         # self.last_updated_at = ts_now()
 
     def flatten_aggregation_hierarchy(self, root, hierarchy_tuple=()):
@@ -1056,27 +1048,27 @@ class NewTermsRule(RuleType):
             A similar formatting will be performed in the add_data method and used as the basis for comparison
 
         """
-        keys = []
-        counts = []
+        final_keys = []
+        final_counts = []
         # There are more aggregation hierarchies left.  Traverse them.
         if 'values' in root:
-            new_terms, new_counts = self.flatten_aggregation_hierarchy(root['values']['buckets'], hierarchy_tuple + (root['key'],))
-            keys += new_terms
-            counts += new_counts
+            keys, counts = self.flatten_aggregation_hierarchy(root['values']['buckets'], hierarchy_tuple + (root['key'],))
+            final_keys += keys
+            final_counts += counts
         else:
             # We've gotten to a sub-aggregation, which may have further sub-aggregations
             # See if we need to traverse further
             for node in root:
                 if 'values' in node:
-                    new_terms, new_counts = self.flatten_aggregation_hierarchy(node, hierarchy_tuple)
-                    keys += new_terms
-                    counts += new_counts
+                    keys, counts = self.flatten_aggregation_hierarchy(node, hierarchy_tuple)
+                    final_keys += keys
+                    final_counts += counts
                 else:
-                    keys.append(hierarchy_tuple + (node['key'],))
-                    counts.append(node['doc_count'])
-        return keys, counts
+                    final_keys.append(hierarchy_tuple + (node['key'],))
+                    final_counts.append(node['doc_count'])
+        return final_keys, final_counts
 
-    def add_new_term_data(self, payload):
+    def add_terms_data(self, payload):
         # if self.should_refresh_terms():
         #     self.update_terms()
         timestamp = list(payload.keys())[0]
@@ -1096,45 +1088,47 @@ class NewTermsRule(RuleType):
                     "hits" : new_count
                     }
                 self.add_match(copy.deepcopy(match))
-                
-    def add_data(self, data):
-        for document in data:
-            for field in self.fields:
-                value = ()
-                lookup_field = field
-                if type(field) == list:
-                    # For composite keys, make the lookup based on all fields
-                    # Make it a tuple since it can be hashed and used in dictionary lookups
-                    lookup_field = tuple(field)
-                    for sub_field in field:
-                        lookup_result = lookup_es_key(document, sub_field)
-                        if not lookup_result:
-                            value = None
-                            break
-                        value += (lookup_result,)
-                else:
-                    value = lookup_es_key(document, field)
-                if not value and self.rules.get('alert_on_missing_field'):
-                    document['missing_field'] = lookup_field
-                    self.add_match(copy.deepcopy(document))
-                elif value:
-                    if value not in self.seen_values[lookup_field]:
-                        document['new_field'] = lookup_field
-                        self.add_match(copy.deepcopy(document))
-                        self.seen_values[lookup_field].append(value)
 
-    def add_terms_data(self, terms):
-        # With terms query, len(self.fields) is always 1 and the 0'th entry is always a string
-        field = self.fields[0]
-        for timestamp, buckets in terms.items():
-            for bucket in buckets:
-                if bucket['doc_count']:
-                    if bucket['key'] not in self.seen_values[field]:
-                        match = {field: bucket['key'],
-                                 self.rules['timestamp_field']: timestamp,
-                                 'new_field': field}
-                        self.add_match(match)
-                        self.seen_values[field].append(bucket['key'])
+    ### NOT USED ANYMORE ###      
+    # def add_data(self, data):
+    #     for document in data:
+    #         for field in self.fields:
+    #             value = ()
+    #             lookup_field = field
+    #             if type(field) == list:
+    #                 # For composite keys, make the lookup based on all fields
+    #                 # Make it a tuple since it can be hashed and used in dictionary lookups
+    #                 lookup_field = tuple(field)
+    #                 for sub_field in field:
+    #                     lookup_result = lookup_es_key(document, sub_field)
+    #                     if not lookup_result:
+    #                         value = None
+    #                         break
+    #                     value += (lookup_result,)
+    #             else:
+    #                 value = lookup_es_key(document, field)
+    #             if not value and self.rules.get('alert_on_missing_field'):
+    #                 document['missing_field'] = lookup_field
+    #                 self.add_match(copy.deepcopy(document))
+    #             elif value:
+    #                 if value not in self.seen_values[lookup_field]:
+    #                     document['new_field'] = lookup_field
+    #                     self.add_match(copy.deepcopy(document))
+    #                     self.seen_values[lookup_field].append(value)
+
+    ### NOT USED ANYMORE ###      
+    # def add_terms_data(self, terms):
+    #     # With terms query, len(self.fields) is always 1 and the 0'th entry is always a string
+    #     field = self.fields[0]
+    #     for timestamp, buckets in terms.items():
+    #         for bucket in buckets:
+    #             if bucket['doc_count']:
+    #                 if bucket['key'] not in self.seen_values[field]:
+    #                     match = {field: bucket['key'],
+    #                              self.rules['timestamp_field']: timestamp,
+    #                              'new_field': field}
+    #                     self.add_match(match)
+    #                     self.seen_values[field].append(bucket['key'])
 
     def get_lookup_key(self,field):
         return tuple(field) if type(field) == list else field

@@ -1069,8 +1069,6 @@ class NewTermsRule(RuleType):
         return final_keys, final_counts
 
     def add_terms_data(self, payload):
-        # if self.should_refresh_terms():
-        #     self.update_terms()
         timestamp = list(payload.keys())[0]
         data = payload[timestamp]
         for field in self.fields:

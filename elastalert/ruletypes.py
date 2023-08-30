@@ -430,7 +430,7 @@ class TermsWindow:
 
         self.data = sortedlist(key= lambda x: x[0]) #sorted by timestamp
         self.existing_terms = set()
-        self.new_terms = {}
+        self.potential_new_term_windows = {}
         self.count_dict = {}
 
     """ used to add new terms and their counts for a timestamp into the sliding window - data """
@@ -441,7 +441,7 @@ class TermsWindow:
             self.count_dict[term] += count
             self.existing_terms.add(term)
         self.data.add((timestamp, terms,counts))
-        self.adjust_window()
+        self.resize()
 
     """ function to split new terms and existing terms when given timestamp, terms and counts"""
     def split(self,timestamp, terms, counts):
@@ -449,7 +449,7 @@ class TermsWindow:
         unseen_counts = []
         seen_terms = []
         seen_counts = []
-        self.adjust_window(till= timestamp - self.term_window_size) 
+        self.resize(till = timestamp - self.term_window_size) 
         for (term, count) in zip(terms, counts):
             if term not in self.existing_terms:
                 unseen_terms.append(term)
@@ -459,30 +459,40 @@ class TermsWindow:
                 seen_counts.append(count)
         return seen_terms, seen_counts, unseen_terms, unseen_counts
 
-    """ function to update the new terms windows"""
-    def update_new_terms(self, timestamp, unseen_terms, unseen_counts):
+    """ function to update the potential new terms windows"""
+    def update_potential_new_term_windows(self, timestamp, unseen_terms, unseen_counts):
         for (term, count) in zip(unseen_terms, unseen_counts):
             event = ({self.ts_field: timestamp}, count)
-            window = self.new_terms.setdefault( term , EventWindow(self.threshold_window_size, getTimestamp=self.get_ts))
+            window = self.potential_new_term_windows.setdefault( term , EventWindow(self.threshold_window_size, getTimestamp=self.get_ts))
             window.append(event)
 
 
     """function to get the matched new_terms that have crossed the threshold configured"""
-    def get_matches(self, timestamp, unseen_terms, unseen_counts):
-        matched_terms = []
-        matched_counts = []
-        for (unseen_term, unseen_count) in zip(unseen_terms, unseen_counts):
-            window = self.new_terms.get(unseen_term)
+    def extract_new_terms(self, potential_new_terms, potential_term_counts):
+        new_terms = []
+        new_counts = []
+        for (potential_new_term, potential_term_count) in zip(potential_new_terms, potential_term_counts):
+            window = self.potential_new_term_windows.get(potential_new_term)
             if window.count() >= self.threshold:
-                matched_terms.append(unseen_term)
-                matched_counts.append(unseen_count)
-                self.new_terms.pop(unseen_term)
-        return matched_terms, matched_counts
+                new_terms.append(potential_new_term)
+                new_counts.append(potential_term_count)
+                self.potential_new_term_windows.pop(potential_new_term)
+        return new_terms, new_counts
+
+    def get_new_terms(self, timestamp, terms, counts):
+        existing_terms, existing_counts, potential_new_terms, potential_term_counts = self.split(timestamp, terms, counts) # Split the potential_new_terms and existing terms along with their counts based on current timestamp
+        self.update_potential_new_term_windows(timestamp, potential_new_terms, potential_term_counts) # Update the potential_new_term_windows
+        new_terms, new_counts = self.extract_new_terms( potential_new_terms, potential_term_counts) # extract and delete new terms from the potential_new_terms_window. 
+        self.add(timestamp, existing_terms + new_terms, existing_counts + new_counts) # Add the exiting terms and new_terms to the terms_window
+        return new_terms, new_counts
+            
         
-    """ function to adjust the sliding window list - data and the set - existing_terms
-    all the events with their timestamp that doesn't fall in the terms_window durartion are popped and the counts of keys in popped events are subtracted from count_dict
-    After subtraction, if the term's count reaches 0, they are removed from count_dict and existing_terms, i.e they have not occured even once in the past terms_window duration"""
-    def adjust_window(self, till=None):
+    """ This fn makes sure that the duration of the sliding window does not exceed term_window_size
+    all the events with their timestamp lesser than 'till' are popped and the counts of keys in popped events are subtracted from count_dict
+    After subtraction, if a term's count reaches 0, they are removed from count_dict and existing_terms, i.e they have not occured in terms_window duration
+    by default, till =  (last event's timestamp - term_window_size  ) , 
+    """
+    def resize(self, till=None):
         if len(self.data)==0:
             return
 
@@ -1074,19 +1084,16 @@ class NewTermsRule(RuleType):
         for field in self.fields:
             lookup_key = self.get_lookup_key(field)
             keys, counts =  data[lookup_key]
-            term_window = self.term_windows[lookup_key]
-            seen_terms, seen_counts, unseen_terms, unseen_counts = term_window.split(timestamp,keys, counts) # Split the new_terms and existing terms with their counts based on the timestamp
-            term_window.update_new_terms(timestamp, unseen_terms, unseen_counts) # Update the new_term_windows for the new_terms
-            matched_terms, matched_counts = term_window.get_matches(timestamp, unseen_terms, unseen_counts) # get the new_terms that have crossed the threshold
-            term_window.add(timestamp, seen_terms + matched_terms, seen_counts + matched_counts) 
+
+            new_terms, new_counts = self.term_windows[lookup_key].get_new_terms(timestamp, keys, counts )
             
             # append and get all match keys and counts
-            for (key, count) in zip(matched_terms, matched_counts):
+            for (new_term, new_count) in zip(new_terms, new_counts):
                 match = {
                     "field": lookup_key,
                     self.rules['timestamp_field']: timestamp,
-                    "new_value": tuple(key) if type(key) == list else key,
-                    "hits" : count
+                    "new_value": tuple(new_term) if type(new_term) == list else new_term,
+                    "hits" : new_count
                     }
                 self.add_match(copy.deepcopy(match))
                 

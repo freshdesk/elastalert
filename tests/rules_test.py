@@ -905,7 +905,7 @@ def test_new_term_threshold():
              'timestamp_field': '@timestamp',
              'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'days': 10  },
-             'window_step_size' : {'hours': 1  },'refresh_interval' : {'hours': 2  }, 'terms_size': 10000, 'threshold': 0 }
+             'window_step_size' : {'hours': 1  }, 'terms_size': 10000, 'threshold': 0 }
       
     mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1}]}}}] }
     
@@ -987,7 +987,7 @@ def test_new_term_bounds():
              'timestamp_field': '@timestamp',
              'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'days': 10  },
-             'window_step_size' : {'hours': 1  },'refresh_interval' : {'hours': 2  }, 'terms_size': 10000, 'threshold_window_size': {"days": 3} }
+             'window_step_size' : {'hours': 1  }, 'terms_size': 10000, 'threshold_window_size': {"days": 3} }
       
     mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
                                                                      {'key': 'key2', 'doc_count': 5}]}}}] }
@@ -998,7 +998,6 @@ def test_new_term_bounds():
         rule = NewTermsRule(rules)
 
     assert rule.window_size == datetime.timedelta(**{'days': 7})
-    assert rule.refresh_interval == datetime.timedelta(**{'hours': 6})
     assert rule.threshold_window_size == datetime.timedelta(**{'days': 2})
     assert rule.terms_size == 1000
 

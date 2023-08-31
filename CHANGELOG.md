@@ -1,3 +1,6 @@
+# fw_2.9.0.8
+- Percentage match rule type modified to work with haystack usecase [HAYS-4850]
+
 # fw_2.9.0.5
 - New Term Rule type modified to work with haystack usecase
 - Updated terms aggregation query to get existing terms

@@ -3,6 +3,7 @@ import copy
 import datetime
 import sys
 import time
+import itertools
 
 from sortedcontainers import SortedKeyList as sortedlist
 
@@ -410,6 +411,104 @@ class EventWindow(object):
             self.running_count += event[1]
         self.data.rotate(-rotation)
 
+class TermsWindow:
+
+    """ For each field configured in new_term rule, This term window is created and maintained.
+    A sliding window is maintained and count of all the existing terms are stored.
+    
+    data - Sliding window which holds the queried terms and counts along with timestamp. This list is sorted in ascending order based on the timestamp
+    existing_terms - A set containing existing terms. mainly used for looking up new terms.
+    new_terms - Dictionary of EventWindows created for new terms.
+    count_dict - Dictionary containing the count of existing terms. When something is added to or popped from the sliding window - data, this count is updated
+    """
+    def __init__(self, term_window_size, ts_field , threshold, threshold_window_size, get_ts):
+        self.term_window_size = term_window_size
+        self.ts_field = ts_field
+        self.threshold = threshold
+        self.threshold_window_size = threshold_window_size
+        self.get_ts = get_ts
+
+        self.data = sortedlist(key= lambda x: x[0]) #sorted by timestamp
+        self.existing_terms = set()
+        self.potential_new_term_windows = {}
+        self.count_dict = {}
+
+    """ used to add new terms and their counts for a timestamp into the sliding window - data """
+    def add(self, timestamp, terms, counts):
+        for (term, count) in zip(terms, counts):
+            if term not in self.count_dict:
+                self.count_dict[term] = 0    
+            self.count_dict[term] += count
+            self.existing_terms.add(term)
+        self.data.add((timestamp, terms,counts))
+        self.resize()
+
+    """ function to split new terms and existing terms when given timestamp, terms and counts"""
+    def split(self,timestamp, terms, counts):
+        unseen_terms = []
+        unseen_counts = []
+        seen_terms = []
+        seen_counts = []
+        self.resize(till = timestamp - self.term_window_size) 
+        for (term, count) in zip(terms, counts):
+            if term not in self.existing_terms:
+                unseen_terms.append(term)
+                unseen_counts.append(count)
+            else:
+                seen_terms.append(term)
+                seen_counts.append(count)
+        return seen_terms, seen_counts, unseen_terms, unseen_counts
+
+    """ function to update the potential new terms windows"""
+    def update_potential_new_term_windows(self, timestamp, unseen_terms, unseen_counts):
+        for (term, count) in zip(unseen_terms, unseen_counts):
+            event = ({self.ts_field: timestamp}, count)
+            window = self.potential_new_term_windows.setdefault( term , EventWindow(self.threshold_window_size, getTimestamp=self.get_ts))
+            window.append(event)
+
+
+    """function to get the matched new_terms that have crossed the threshold configured"""
+    def extract_new_terms(self, potential_new_terms, potential_term_counts):
+        new_terms = []
+        new_counts = []
+        for (potential_new_term, potential_term_count) in zip(potential_new_terms, potential_term_counts):
+            window = self.potential_new_term_windows.get(potential_new_term)
+            if window.count() >= self.threshold:
+                new_terms.append(potential_new_term)
+                new_counts.append(potential_term_count)
+                self.potential_new_term_windows.pop(potential_new_term)
+        return new_terms, new_counts
+
+    def get_new_terms(self, timestamp, terms, counts):
+        existing_terms, existing_counts, potential_new_terms, potential_term_counts = self.split(timestamp, terms, counts) # Split the potential_new_terms and existing terms along with their counts based on current timestamp
+        self.update_potential_new_term_windows(timestamp, potential_new_terms, potential_term_counts) # Update the potential_new_term_windows
+        new_terms, new_counts = self.extract_new_terms( potential_new_terms, potential_term_counts) # extract and delete new terms from the potential_new_terms_window. 
+        self.add(timestamp, existing_terms + new_terms, existing_counts + new_counts) # Add the exiting terms and new_terms to the terms_window
+        return new_terms, new_counts
+            
+        
+    """ This fn makes sure that the duration of the sliding window does not exceed term_window_size
+    all the events with their timestamp lesser than 'till' are popped and the counts of keys in popped events are subtracted from count_dict
+    After subtraction, if a term's count reaches 0, they are removed from count_dict and existing_terms, i.e they have not occured in terms_window duration
+    by default, till =  (last event's timestamp - term_window_size  ) , 
+    """
+    def resize(self, till=None):
+        if len(self.data)==0:
+            return
+
+        if till == None:
+            till = self.data[-1][0] - self.term_window_size
+
+        while len(self.data)!=0 and self.data[0][0] < till:
+            timestamp, keys, counts = self.data.pop(0)
+            for i in range(len(keys)):
+                self.count_dict[keys[i]] -= counts[i]
+                if self.count_dict[keys[i]] <= 0:
+                    self.count_dict.pop(keys[i])
+                    self.existing_terms.discard(keys[i])
+
+    
+
 
 class SpikeRule(RuleType):
     """ A rule that uses two sliding windows to compare relative event frequency. """
@@ -676,21 +775,25 @@ class NewTermsRule(RuleType):
 
     def __init__(self, rule, args=None):
         super(NewTermsRule, self).__init__(rule, args)
-        self.seen_values = {}
+        self.term_windows = {}
         self.last_updated_at = None
         self.es = kibana_adapter_client(self.rules)
+        self.ts_field = self.rules.get('timestamp_field', '@timestamp')
+        self.get_ts = new_get_event_ts(self.ts_field)
+        self.new_terms = {}
+        
+        self.threshold = rule.get('threshold',0)
 
         # terms_window_size : Default & Upperbound - 7 Days
         self.window_size = min(datetime.timedelta(**self.rules.get('terms_window_size', {'days': 7})), datetime.timedelta(**{'days': 7}))
         
-        # window_step_size : Default - 1 Days, Lowerbound: 6 hours
-        self.step =  max( datetime.timedelta(**self.rules.get('window_step_size', {'days': 1})), datetime.timedelta(**{'hours': 6}) )
+        self.step =  datetime.timedelta(**{'hours': 1})
         
-        # refresh_interval : Default - 6 hours, Lowerbound: 6 hours
-        self.refresh_interval =  max( datetime.timedelta(**self.rules.get('refresh_interval', {'hours': 6})), datetime.timedelta(**{'hours': 6}) )
-
-        # refresh_interval : Default - 500, Upperbound: 1000
+        # terms_size : Default - 500, Upperbound: 1000
         self.terms_size = min(self.rules.get('terms_size', 500),1000)
+
+        # threshold_window_size
+        self.threshold_window_size =  min( datetime.timedelta(**self.rules.get('threshold_window_size', {'hours': 1})), datetime.timedelta(**{'days': 2}) )
 
         # Allow the use of query_key or fields
         if 'fields' not in self.rules:
@@ -713,17 +816,12 @@ class NewTermsRule(RuleType):
                 if self.rules.get('use_keyword_postfix', False): # making it false by default as we wont use the keyword suffix
                     elastalert_logger.warn('Warning: If query_key is a non-keyword field, you must set '
                                            'use_keyword_postfix to false, or add .keyword/.raw to your query_key.')
-        
-    def should_refresh_terms(self):
-        return self.last_updated_at is None or self.last_updated_at < ( ts_now() - self.refresh_interval)
-
-    def update_terms(self,args=None):
         try:
             self.get_all_terms(args=args)
         except Exception as e:
             # Refuse to start if we cannot get existing terms
             raise EAException('Error searching for existing terms: %s' % (repr(e))).with_traceback(sys.exc_info()[2])
-
+        
         
 
     def get_new_term_query(self,starttime,endtime,field):
@@ -771,7 +869,7 @@ class NewTermsRule(RuleType):
 
         # For composite keys, we will need to perform sub-aggregations
         if type(field) == list:
-            self.seen_values.setdefault(tuple(field), [])
+            self.term_windows.setdefault(tuple(field), TermsWindow(self.window_size, self.ts_field , self.threshold, self.threshold_window_size, self.get_ts))
             level = query['aggs']
             # Iterate on each part of the composite key and add a sub aggs clause to the elastic search query
             for i, sub_field in enumerate(field):
@@ -784,7 +882,7 @@ class NewTermsRule(RuleType):
                     level['values']['aggs'] = {'values': {'terms': copy.deepcopy(field_name)}}
                     level = level['values']['aggs']
         else:
-            self.seen_values.setdefault(field, [])
+            self.term_windows.setdefault(field, TermsWindow(self.window_size, self.ts_field , self.threshold, self.threshold_window_size, self.get_ts))
             # For non-composite keys, only a single agg is needed
             if self.rules.get('use_keyword_postfix', False):# making it false by default as we wont use the keyword suffix
                 field_name['field'] = add_raw_postfix(field, True)
@@ -792,6 +890,32 @@ class NewTermsRule(RuleType):
                 field_name['field'] = field
 
         return query
+
+    def get_terms_data(self, es, starttime, endtime, field, request_timeout= None):
+        terms = []
+        counts = []
+        query = self.get_new_term_query(starttime,endtime,field)
+        request = get_msearch_query(query,self.rules)
+        
+        if request_timeout == None:
+            res = es.msearch(body=request) 
+        else:
+            res = es.msearch(body=request, request_timeout=request_timeout)
+        res = res['responses'][0] 
+
+        if 'aggregations' in res:
+            buckets = res['aggregations']['values']['buckets']
+            if type(field) == list:
+                for bucket in buckets:
+                    keys, doc_counts = self.flatten_aggregation_hierarchy(bucket)
+                    terms += keys
+                    counts += doc_counts
+            else:
+                for bucket in buckets:
+                    terms.append(bucket['key'])
+                    counts.append(bucket['doc_count'])
+
+        return terms, counts
 
 
 
@@ -810,43 +934,18 @@ class NewTermsRule(RuleType):
         
         for field in self.fields:
             tmp_start = start
-            tmp_end = min(start + self.step, end)
-            query = self.get_new_term_query(tmp_start,tmp_end,field)
-
+            
             # Query the entire time range in small chunks
             while tmp_start < end:
-                
-                msearch_query = get_msearch_query(query,self.rules)
-                
-                res = self.es.msearch(msearch_query,request_timeout=50)
-                res = res['responses'][0] 
-
-                if 'aggregations' in res:
-                    buckets = res['aggregations']['values']['buckets']
-                    if type(field) == list:
-                        # For composite keys, make the lookup based on all fields
-                        # Make it a tuple since it can be hashed and used in dictionary lookups
-                        for bucket in buckets:
-                            # We need to walk down the hierarchy and obtain the value at each level
-                            self.seen_values[tuple(field)] += self.flatten_aggregation_hierarchy(bucket)
-                    else:
-                        keys = [bucket['key'] for bucket in buckets]
-                        self.seen_values[field] += keys
-                else:
-                    if type(field) == list:
-                        self.seen_values.setdefault(tuple(field), [])
-                    else:
-                        self.seen_values.setdefault(field, [])
-                if tmp_start == tmp_end:
-                    break
-                tmp_start = tmp_end
                 tmp_end = min(tmp_start + self.step, end)
-                query = self.get_new_term_query(tmp_start,tmp_end,field)
+                terms, counts = self.get_terms_data(self.es, tmp_start, tmp_end, field, request_timeout=50)
+                self.term_windows[self.get_lookup_key(field)].add(tmp_end,terms,counts)
+                tmp_start = tmp_end
                 
 
-            for key, values in self.seen_values.items():
-                if not values:
-                    if type(key) == tuple:
+            for lookup_key, window in self.term_windows.items():
+                if not window.existing_terms:
+                    if type(lookup_key) == tuple:
                         # If we don't have any results, it could either be because of the absence of any baseline data
                         # OR it may be because the composite key contained a non-primitive type.  Either way, give the
                         # end-users a heads up to help them debug what might be going on.
@@ -857,9 +956,8 @@ class NewTermsRule(RuleType):
                     else:
                         elastalert_logger.info('Found no values for %s' % (field))
                     continue
-                self.seen_values[key] = list(set(values))
-                elastalert_logger.info('Found %s unique values for %s' % (len(set(values)), key))
-        self.last_updated_at = ts_now()
+                elastalert_logger.info('Found %s unique values for %s' % (len(window.existing_terms), lookup_key))
+        # self.last_updated_at = ts_now()
 
     def flatten_aggregation_hierarchy(self, root, hierarchy_tuple=()):
         """ For nested aggregations, the results come back in the following format:
@@ -950,75 +1048,88 @@ class NewTermsRule(RuleType):
             A similar formatting will be performed in the add_data method and used as the basis for comparison
 
         """
-        results = []
+        final_keys = []
+        final_counts = []
         # There are more aggregation hierarchies left.  Traverse them.
         if 'values' in root:
-            results += self.flatten_aggregation_hierarchy(root['values']['buckets'], hierarchy_tuple + (root['key'],))
+            keys, counts = self.flatten_aggregation_hierarchy(root['values']['buckets'], hierarchy_tuple + (root['key'],))
+            final_keys += keys
+            final_counts += counts
         else:
             # We've gotten to a sub-aggregation, which may have further sub-aggregations
             # See if we need to traverse further
             for node in root:
                 if 'values' in node:
-                    results += self.flatten_aggregation_hierarchy(node, hierarchy_tuple)
+                    keys, counts = self.flatten_aggregation_hierarchy(node, hierarchy_tuple)
+                    final_keys += keys
+                    final_counts += counts
                 else:
-                    results.append(hierarchy_tuple + (node['key'],))
-        return results
+                    final_keys.append(hierarchy_tuple + (node['key'],))
+                    final_counts.append(node['doc_count'])
+        return final_keys, final_counts
 
-    def add_new_term_data(self, payload):
-        if self.should_refresh_terms():
-            self.update_terms()
+    def add_terms_data(self, payload):
         timestamp = list(payload.keys())[0]
         data = payload[timestamp]
         for field in self.fields:
-            lookup_key =tuple(field) if type(field) == list else field
-            for value in data[lookup_key]:
-                if value not in self.seen_values[lookup_key]:
-                    match = {
-                        "field": lookup_key,
-                        self.rules['timestamp_field']: timestamp,
-                        'new_value': tuple(value) if type(field) == list else value
-                        }
-                    self.add_match(copy.deepcopy(match))
-                    self.seen_values[lookup_key].append(value)
-                
-    def add_data(self, data):
-        for document in data:
-            for field in self.fields:
-                value = ()
-                lookup_field = field
-                if type(field) == list:
-                    # For composite keys, make the lookup based on all fields
-                    # Make it a tuple since it can be hashed and used in dictionary lookups
-                    lookup_field = tuple(field)
-                    for sub_field in field:
-                        lookup_result = lookup_es_key(document, sub_field)
-                        if not lookup_result:
-                            value = None
-                            break
-                        value += (lookup_result,)
-                else:
-                    value = lookup_es_key(document, field)
-                if not value and self.rules.get('alert_on_missing_field'):
-                    document['missing_field'] = lookup_field
-                    self.add_match(copy.deepcopy(document))
-                elif value:
-                    if value not in self.seen_values[lookup_field]:
-                        document['new_field'] = lookup_field
-                        self.add_match(copy.deepcopy(document))
-                        self.seen_values[lookup_field].append(value)
+            lookup_key = self.get_lookup_key(field)
+            keys, counts =  data[lookup_key]
 
-    def add_terms_data(self, terms):
-        # With terms query, len(self.fields) is always 1 and the 0'th entry is always a string
-        field = self.fields[0]
-        for timestamp, buckets in terms.items():
-            for bucket in buckets:
-                if bucket['doc_count']:
-                    if bucket['key'] not in self.seen_values[field]:
-                        match = {field: bucket['key'],
-                                 self.rules['timestamp_field']: timestamp,
-                                 'new_field': field}
-                        self.add_match(match)
-                        self.seen_values[field].append(bucket['key'])
+            new_terms, new_counts = self.term_windows[lookup_key].get_new_terms(timestamp, keys, counts )
+            
+            # append and get all match keys and counts
+            for (new_term, new_count) in zip(new_terms, new_counts):
+                match = {
+                    "field": lookup_key,
+                    self.rules['timestamp_field']: timestamp,
+                    "new_value": tuple(new_term) if type(new_term) == list else new_term,
+                    "hits" : new_count
+                    }
+                self.add_match(copy.deepcopy(match))
+
+    ### NOT USED ANYMORE ###      
+    # def add_data(self, data):
+    #     for document in data:
+    #         for field in self.fields:
+    #             value = ()
+    #             lookup_field = field
+    #             if type(field) == list:
+    #                 # For composite keys, make the lookup based on all fields
+    #                 # Make it a tuple since it can be hashed and used in dictionary lookups
+    #                 lookup_field = tuple(field)
+    #                 for sub_field in field:
+    #                     lookup_result = lookup_es_key(document, sub_field)
+    #                     if not lookup_result:
+    #                         value = None
+    #                         break
+    #                     value += (lookup_result,)
+    #             else:
+    #                 value = lookup_es_key(document, field)
+    #             if not value and self.rules.get('alert_on_missing_field'):
+    #                 document['missing_field'] = lookup_field
+    #                 self.add_match(copy.deepcopy(document))
+    #             elif value:
+    #                 if value not in self.seen_values[lookup_field]:
+    #                     document['new_field'] = lookup_field
+    #                     self.add_match(copy.deepcopy(document))
+    #                     self.seen_values[lookup_field].append(value)
+
+    ### NOT USED ANYMORE ###      
+    # def add_terms_data(self, terms):
+    #     # With terms query, len(self.fields) is always 1 and the 0'th entry is always a string
+    #     field = self.fields[0]
+    #     for timestamp, buckets in terms.items():
+    #         for bucket in buckets:
+    #             if bucket['doc_count']:
+    #                 if bucket['key'] not in self.seen_values[field]:
+    #                     match = {field: bucket['key'],
+    #                              self.rules['timestamp_field']: timestamp,
+    #                              'new_field': field}
+    #                     self.add_match(match)
+    #                     self.seen_values[field].append(bucket['key'])
+
+    def get_lookup_key(self,field):
+        return tuple(field) if type(field) == list else field
 
 
 class CardinalityRule(RuleType):

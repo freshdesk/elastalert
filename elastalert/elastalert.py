@@ -1978,7 +1978,7 @@ class ElastAlerter(object):
             index = self.get_index(rule, starttime, endtime)
 
             hits_terms = self.get_hits_terms(rule, starttime, endtime, index, key, qk, number)
-            if hits_terms is None:
+            if hits_terms is None or not hits_terms:
                 top_events_count = {}
             else:
                 buckets = list(hits_terms.values())[0]

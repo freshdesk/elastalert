@@ -26,7 +26,7 @@ def get_msearch_query(query, rule):
     search_arr = []
     search_arr.append({'index': [rule['index']]})
     if rule.get('use_count_query'):
-        query['size'] = 0
+        query['size'] = 1
     if rule.get('include'):
         query['_source'] = {}
         query['_source']['includes'] = rule['include']

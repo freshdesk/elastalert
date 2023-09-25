@@ -5,6 +5,7 @@ import sys
 import time
 import itertools
 
+
 from sortedcontainers import SortedKeyList as sortedlist
 
 from elastalert.util import (add_raw_postfix, dt_to_ts, EAException, elastalert_logger, elasticsearch_client,
@@ -211,15 +212,30 @@ class FrequencyRule(RuleType):
         self.ts_field = self.rules.get('timestamp_field', '@timestamp')
         self.get_ts = new_get_event_ts(self.ts_field)
         self.attach_related = self.rules.get('attach_related', False)
+    
+    # def add_count_data(self, data):
+    #     """ Add count data to the rule. Data should be of the form {ts: count}. """
+    #     if len(data) > 1:
+    #         raise EAException('add_count_data can only accept one count at a time')
+
+    #     (ts, count), = list(data.items())
+
+    #     event = ({self.ts_field: ts}, count)
+    #     self.occurrences.setdefault('all', EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
+    #     self.check_for_match('all')
 
     def add_count_data(self, data):
-        """ Add count data to the rule. Data should be of the form {ts: count}. """
-        if len(data) > 1:
-            raise EAException('add_count_data can only accept one count at a time')
-
-        (ts, count), = list(data.items())
-
-        event = ({self.ts_field: ts}, count)
+        if not 'endtime' in data or not 'count' in data:
+            raise EAException('add_count_data should have endtime and count')
+        ts = data['endtime']
+        count = data['count']
+        doc = {}
+        if 'event' in data and data['event'][0]:
+            doc = data['event'][0]
+        else:
+            doc = {self.ts_field: ts}
+        event = (doc, count)
+        elastalert_logger.info("event %s",event)
         self.occurrences.setdefault('all', EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
         self.check_for_match('all')
 
@@ -336,7 +352,7 @@ class EventWindow(object):
         self.data.add(event)
         if event and event[1]:
             self.running_count += event[1]
-
+        
         while self.duration() >= self.timeframe:
             oldest = self.data[0]
             self.data.remove(oldest)
@@ -531,11 +547,14 @@ class SpikeRule(RuleType):
         self.ref_window_filled_once = False
 
     def add_count_data(self, data):
-        """ Add count data to the rule. Data should be of the form {ts: count}. """
-        if len(data) > 1:
-            raise EAException('add_count_data can only accept one count at a time')
-        for ts, count in data.items():
-            self.handle_event({self.ts_field: ts}, count, 'all')
+        #""" Add count data to the rule. Data should be of the form {ts: count}. """
+        # if len(data) > 1:
+        #     raise EAException('add_count_data can only accept one count at a time')
+        # for ts, count in data.items():
+        #     self.handle_event({self.ts_field: ts}, count, 'all')
+        ts = data['endtime']
+        count = data['count']
+        self.handle_event({self.ts_field: ts}, count, 'all')     
 
     def add_terms_data(self, terms):
         for timestamp, buckets in terms.items():

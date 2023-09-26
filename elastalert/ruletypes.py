@@ -225,6 +225,8 @@ class FrequencyRule(RuleType):
     #     self.check_for_match('all')
 
     def add_count_data(self, data):
+        # data struncture should be -> data: {endtime:<dateTime>,count:<CountOfEvents>,event:[{}]}
+        # if data doesn't have endtime and count as above example, raise an exception
         if not 'endtime' in data or not 'count' in data:
             raise EAException('add_count_data should have endtime and count')
         ts = data['endtime']
@@ -552,6 +554,9 @@ class SpikeRule(RuleType):
         #     raise EAException('add_count_data can only accept one count at a time')
         # for ts, count in data.items():
         #     self.handle_event({self.ts_field: ts}, count, 'all')
+
+        # data struncture should be -> data: {endtime:<dateTime>,count:<CountOfEvents>,event:[{}]}
+        # if data doesn't have endtime and count as above example, raise an exception
         ts = data['endtime']
         count = data['count']
         self.handle_event({self.ts_field: ts}, count, 'all')     

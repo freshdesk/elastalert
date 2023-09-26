@@ -453,7 +453,6 @@ class ElastAlerter(object):
             elastalert_logger.info(status_log)
 
         hits = self.process_hits(rule, hits)
-
         return hits
 
     
@@ -504,8 +503,9 @@ class ElastAlerter(object):
             starttime,
             endtime,
             timestamp_field=rule['timestamp_field'],
-            sort=False,
+            sort=True,
             to_ts_func=rule['dt_to_ts'],
+            desc=True,
         )
 
         request = get_msearch_query(query,rule)
@@ -528,7 +528,14 @@ class ElastAlerter(object):
             "Queried rule %s from %s to %s: %s hits" % (rule['name'], pretty_ts(starttime, lt, self.pretty_ts_format),
                                                         pretty_ts(endtime, lt, self.pretty_ts_format), res['hits']['total'])
         )
-        return {endtime: res['hits']['total']}
+        
+        if len(res['hits']['hits']) > 0 :
+            event = self.process_hits(rule, res['hits']['hits'])
+        else:
+            event= self.process_hits(rule,[{'_source': {'@timestamp': endtime}}])
+            
+        return {"endtime":endtime,"count": res['hits']['total'],"event": event}
+        #return {endtime: res['hits']['total']}
 
     def get_hits_terms(self, rule, starttime, endtime, index, key, qk=None, size=None):
         rule_filter = copy.copy(rule['filter'])
@@ -727,7 +734,6 @@ class ElastAlerter(object):
             elastalert_logger.info("Query start and end time converting UTC to query_timezone : {}".format(rule.get('query_timezone')))
             start = ts_utc_to_tz(start, rule.get('query_timezone'))
             end = ts_utc_to_tz(end, rule.get('query_timezone'))
-
         # Reset hit counter and query
         rule_inst = rule['type']
         rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
@@ -988,7 +994,6 @@ class ElastAlerter(object):
 
         rule['original_starttime'] = rule['starttime']
         rule['scrolling_cycle'] = 0
-
         self.thread_data.num_hits = 0
         self.thread_data.num_dupes = 0
         self.thread_data.cumulative_hits = 0

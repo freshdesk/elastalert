@@ -115,26 +115,26 @@ def test_freq_count():
              'use_count_query': True}
     # Normal match
     rule = FrequencyRule(rules)
-    rule.add_count_data({ts_to_dt('2014-10-10T00:00:00'): 75})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:00:00')}],'endtime':ts_to_dt('2014-10-10T00:00:00'),'count': 75})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:15:00'): 10})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:15:00')}],'endtime':ts_to_dt('2014-10-10T00:15:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:25:00'): 10})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:25:00')}],'endtime':ts_to_dt('2014-10-10T00:25:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:45:00'): 6})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:45:00')}],'endtime':ts_to_dt('2014-10-10T00:45:00'),'count': 6})
     assert len(rule.matches) == 1
 
     # First data goes out of timeframe first
     rule = FrequencyRule(rules)
-    rule.add_count_data({ts_to_dt('2014-10-10T00:00:00'): 75})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:00:00')}],'endtime':ts_to_dt('2014-10-10T00:00:00'),'count': 75})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:45:00'): 10})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:45:00')}],'endtime':ts_to_dt('2014-10-10T00:45:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:55:00'): 10})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:55:00')}],'endtime':ts_to_dt('2014-10-10T00:55:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T01:05:00'): 6})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T01:05:00')}],'endtime':ts_to_dt('2014-10-10T01:05:00'),'count': 6})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T01:00:00'): 75})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T01:00:00')}],'endtime':ts_to_dt('2014-10-10T01:00:00'),'count': 75})
     assert len(rule.matches) == 1
 
     # except EAException
@@ -142,7 +142,7 @@ def test_freq_count():
         rule = FrequencyRule(rules)
         rule.add_count_data('aaaa')
     except EAException as ea:
-        assert 'add_count_data can only accept one count at a time' in str(ea)
+        assert 'add_count_data should have endtime and count' in str(ea)
 
 
 def test_freq_out_of_order():
@@ -226,20 +226,20 @@ def test_spike_count():
     rule = SpikeRule(rules)
 
     # Double rate of events at 20 seconds
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:00'): 10})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:10'): 10})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:10'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:20'): 20})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:20'),'count': 20})
     assert len(rule.matches) == 1
 
     # Downward spike
     rule = SpikeRule(rules)
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:00'): 10})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:10'): 10})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:10'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:20'): 0})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:20'),'count': 0})
     assert len(rule.matches) == 1
 
 
@@ -1106,13 +1106,13 @@ def test_flatline_count():
              'threshold': 1,
              'timestamp_field': '@timestamp'}
     rule = FlatlineRule(rules)
-    rule.add_count_data({ts_to_dt('2014-10-11T00:00:00'): 1})
+    rule.add_count_data({'endtime':ts_to_dt('2014-10-11T00:00:00'),'count': 1})
     rule.garbage_collect(ts_to_dt('2014-10-11T00:00:10'))
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-11T00:00:15'): 0})
+    rule.add_count_data({'endtime':ts_to_dt('2014-10-11T00:00:15'),'count': 0})
     rule.garbage_collect(ts_to_dt('2014-10-11T00:00:20'))
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-11T00:00:35'): 0})
+    rule.add_count_data({'endtime':ts_to_dt('2014-10-11T00:00:35'),'count': 0})
     assert len(rule.matches) == 1
 
 

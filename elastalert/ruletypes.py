@@ -237,7 +237,6 @@ class FrequencyRule(RuleType):
         else:
             doc = {self.ts_field: ts}
         event = (doc, count)
-        elastalert_logger.info("event %s",event)
         self.occurrences.setdefault('all', EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
         self.check_for_match('all')
 

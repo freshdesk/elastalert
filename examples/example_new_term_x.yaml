@@ -1,0 +1,70 @@
+# Alert when a login event is detected for user "admin" never before seen IP
+# In this example, "login" logs contain which user has logged in from what IP
+
+# (Optional)
+# Elasticsearch host
+# es_host: elasticsearch.example.com
+
+# (Optional)
+# Elasticsearch port
+# es_port: 14900
+
+# (OptionaL) Connect with SSL to Elasticsearch
+#use_ssl: True
+
+# (Optional) basic-auth username and password for Elasticsearch
+#es_username: someusername
+#es_password: somepassword
+
+# (Required)
+# Rule name, must be unique
+name: New term example
+
+# (Required)
+# Type of alert.
+# the frequency rule type alerts when num_events events occur with timeframe time
+type: new_term
+
+# (Required)
+# Index to search, wildcard supported
+index: traces*
+
+# (Required, new_term specific)
+# Monitor the field ip_address
+timestamp_field: timestamp
+
+fields:
+ - [ac_h,region]
+ - product
+
+
+# (Optional, new_term specific)
+# This means that we will query 90 days worth of data when ElastAlert starts to find which values of ip_address already exist
+# If they existed in the last 90 days, no alerts will be triggered for them when they appear
+terms_window_size:
+  days: 10
+
+window_step_size:
+  days: 1
+
+
+
+filter:
+- query:
+    query_string:
+        query: "product:new_prod"
+
+#use_keyword_postfix: false
+
+# scan_entire_timeframe: true
+
+# timeframe:
+#     hours: 18
+
+
+# limit_execution : "* 10-18 * * 1-5"
+
+# (Required)
+# The alert is use when a match is found
+alert:
+- "debug"

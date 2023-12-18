@@ -1297,7 +1297,8 @@ class ErrorRateRule(BaseAggregationRule):
             self.rules['count_all_errors'] = False
 
         # hardcoding uniq aggregation for total count
-        self.rules['total_agg_type'] = "uniq"
+        self.rules['uniq_agg_type'] = "uniq"
+        self.rules['uniq_agggregation'] = "uniq"
 
     def calculate_err_rate(self,payload):
         for timestamp, payload_data in payload.items():

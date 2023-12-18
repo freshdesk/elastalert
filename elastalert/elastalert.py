@@ -632,7 +632,7 @@ class ElastAlerter(object):
         query = self.get_query_string(rule)
         aggregation = {"function": rule['total_agg_type'].upper(), "field": rule['total_agg_key']}
 
-        total_data, total_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
+        total_data = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
 
         if total_data is None:
             return {}
@@ -647,7 +647,9 @@ class ElastAlerter(object):
             aggregation = {"function": "COUNT", "field": "1"}
 
 
-        error_data, error_count = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation)
+        error_data = self.get_ch_data(rule, starttime, endtime, agg_key, query, aggregation, rule.get('query_key'))
+
+        time.sleep(100000)
 
         if error_data is None:
             return {}
@@ -666,7 +668,7 @@ class ElastAlerter(object):
         return ""
 
     #method used by get_error_rate for calculating aggregates from ch data using query_endpoint
-    def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery,aggregation):
+    def get_ch_data(self, rule, starttime, endtime, agg_key,freshquery,aggregation,group_by=None):
         data = {
                     "selects":[],
                     "start_time":dt_to_ts_with_format(starttime,"%Y-%m-%dT%H:%M:%S.%f")[:-3]+'Z',
@@ -676,7 +678,13 @@ class ElastAlerter(object):
                     "sort_orders":[{"sort_by": agg_key,"sort_direction":"desc"}],
                     "aggregations":[aggregation]
                 }
+        if(group_by is not None):
+            data['selects'].append(group_by)
+            data['group_bys'].append(group_by)
         try:
+            print("================================")
+            print("req====")
+            print(data)
             res = requests.post(self.query_endpoint, json=data)
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
@@ -685,7 +693,9 @@ class ElastAlerter(object):
             self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
             return None,0
         res = json.loads(res.content)
-        return int(res['data'][0][agg_key]), res['rows']
+        print("req====")
+        print(res)
+        return res['data']
         elastalert_logger.info("request data is %s" % json.dumps(data))
         # res = requests.post(self.query_endpoint, json=data)
         # return None, None

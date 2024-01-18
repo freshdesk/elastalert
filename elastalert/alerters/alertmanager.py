@@ -59,6 +59,9 @@ class AlertmanagerAlerter(Alerter):
             'labels': self.labels
         }
 
+        if self.rule.get('timestamp_field') in matches[0]:
+            payload['labels']['alert_match_time']=matches[0][self.rule.get('timestamp_field')]
+
         for host in self.hosts:
             try:
                 url = host

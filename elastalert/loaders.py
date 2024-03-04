@@ -68,6 +68,8 @@ def load_rule_schema():
     schema_path = os.path.join(os.path.dirname(__file__), 'schema.yaml')
     with open(schema_path) as schema_file:
         schema_yml = yaml.load(schema_file, Loader=yaml.FullLoader)
+        print("SCHEMA YAML")
+        print(schema_yml)
     return jsonschema.Draft7Validator(schema_yml)
 
 
@@ -166,7 +168,11 @@ class RulesLoader(object):
         rule_files = self.get_names(conf, use_rule)
         for rule_file in rule_files:
             try:
+                
+                
                 rule = self.load_configuration(rule_file, conf, args)
+                print("RULE")
+                print(rule)
                 # A rule failed to load, don't try to process it
                 if not rule:
                     elastalert_logger.error('Invalid rule file skipped: %s' % rule_file)
@@ -399,7 +405,8 @@ class RulesLoader(object):
         # Make sure we have required options
         if self.required_locals - frozenset(list(rule.keys())):
             raise EAException('Missing required option(s): %s' % (', '.join(self.required_locals - frozenset(list(rule.keys())))))
-
+        print("RULE : ")
+        print(rule)
         if 'include' in rule and type(rule['include']) != list:
             raise EAException('include option must be a list')
 
@@ -417,6 +424,16 @@ class RulesLoader(object):
                 rule['query_key'] = raw_query_key[0]
             else:
                 del(rule['query_key'])
+
+        raw_aggregation_keys = rule.get('aggregation_keys')
+        if isinstance(raw_aggregation_keys, list):
+            if len(raw_aggregation_keys) > 1:
+                rule['compound_aggregation_keys'] = raw_aggregation_keys
+                rule['aggregation_keys'] = ','.join(raw_aggregation_keys)
+            elif len(raw_aggregation_keys) == 1:
+                rule['aggregation_keys'] = raw_aggregation_keys[0]
+            else:
+                del(rule['aggregation_keys'])
 
         if isinstance(rule.get('aggregation_key'), list):
             rule['compound_aggregation_key'] = rule['aggregation_key']

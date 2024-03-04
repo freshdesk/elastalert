@@ -281,7 +281,9 @@ class ElastAlerter(object):
         query_element = query['query']
         if 'sort' in query_element:
             query_element.pop('sort')
-        metric_agg_element = rule['aggregation_query_element']
+        metric_agg_element = {}
+        if 'aggregation_query_element' in rule:
+            metric_agg_element = rule['aggregation_query_element']
 
         bucket_interval_period = rule.get('bucket_interval_period')
         if bucket_interval_period is not None:
@@ -297,6 +299,8 @@ class ElastAlerter(object):
                 aggs_element['interval_aggs']['date_histogram']['offset'] = '+%ss' % (rule['bucket_offset_delta'])
         else:
             aggs_element = metric_agg_element
+        
+        elastalert_logger.info("Aggregation keys: %s",query_key)
 
         if query_key is not None:
             for idx, key in reversed(list(enumerate(query_key.split(',')))):
@@ -369,6 +373,8 @@ class ElastAlerter(object):
                 hit['_source'][rule['aggregation_key']] = ', '.join([str(value) for value in values])
 
             processed_hits.append(hit['_source'])
+        print("len(processed_hits)")
+        print(len(processed_hits))
 
         return processed_hits
 
@@ -605,14 +611,17 @@ class ElastAlerter(object):
             sort=False,
             to_ts_func=rule['dt_to_ts'],
         )
+        elastalert_logger.info("FORMED base query %s",base_query)
         if term_size is None:
             term_size = rule.get('terms_size', 50)
         query = self.get_aggregation_query(base_query, rule, query_key, term_size, rule['timestamp_field'])
+        elastalert_logger.info("FORMED aggregated query %s",query)
         request = get_msearch_query(query,rule)
         try:
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+            elastalert_logger.info("Aggregated response: %s",res)
         except ElasticsearchException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
@@ -694,6 +703,7 @@ class ElastAlerter(object):
         new_events = []
         for event in data:
             if event['_id'] in rule['processed_hits']:
+                print("Removing duplicate hit")
                 continue
 
             # Remember the new data's IDs
@@ -1494,7 +1504,40 @@ class ElastAlerter(object):
                 end = ts_to_dt(lookup_es_key(match, rule['timestamp_field'])) + datetime.timedelta(minutes=10)
                 keys = rule.get('top_count_keys')
                 counts = self.get_top_counts(rule, start, end, keys, qk=qk)
+                elastalert_logger.info("top_count_keys: %s",counts)
+                elastalert_logger.info("Match: %s",match)
                 match.update(counts)
+                elastalert_logger.info("Match: %s",match)
+        elif rule.get('aggregation_keys'):
+            elastalert_logger.info("GOT INTO aggregation_keys")
+            for match in matches:
+                if 'query_key' in rule:
+                    qk = lookup_es_key(match, rule['query_key'])
+                else:
+                    qk = None
+
+                if isinstance(rule['type'], FlatlineRule):
+                    # flatline rule triggers when there have been no events from now()-timeframe to now(),
+                    # so using now()-timeframe will return no results. for now we can just mutliple the timeframe
+                    # by 2, but this could probably be timeframe+run_every to prevent too large of a lookup?
+                    timeframe = datetime.timedelta(seconds=2 * rule.get('timeframe').total_seconds())
+                else:
+                    timeframe = rule.get('timeframe', datetime.timedelta(minutes=10))
+
+                start = ts_to_dt(lookup_es_key(match, rule['timestamp_field'])) - timeframe
+                end = ts_to_dt(lookup_es_key(match, rule['timestamp_field'])) + datetime.timedelta(minutes=10)
+                keys = rule.get('aggregation_keys')
+                aggregated_data = self.get_hits_aggregation(rule, start, end, self.get_index(rule, start, end), rule.get('aggregation_keys',None))
+                aggregated_data = next(iter(aggregated_data.values()))['bucket_aggs']['buckets']
+                elastalert_logger.info("aggregated_data: %s" % (aggregated_data))
+                flatten_data = []
+                flatten_data = self.flatten_aggregated_data(aggregated_data,flatten_data)
+                elastalert_logger.info("csv data: %s",flatten_data)
+                elastalert_logger.info("Match: %s",match)
+                match_aggrgated_data = {"aggregated_data":flatten_data} 
+                match.update(match_aggrgated_data)
+                elastalert_logger.info("Match: %s",match)
+
 
         if rule.get('generate_kibana_discover_url'):
             kb_link = generate_kibana_discover_url(rule, matches[0])
@@ -1979,6 +2022,53 @@ class ElastAlerter(object):
         all_counts = {}
         if not number:
             number = rule.get('top_count_number', 5)
+        for key in keys:
+            index = self.get_index(rule, starttime, endtime)
+
+            hits_terms = self.get_hits_terms(rule, starttime, endtime, index, key, qk, number)
+            elastalert_logger.info("hits_terms: %s",hits_terms)
+            if hits_terms is None or not hits_terms:
+                top_events_count = {}
+            else:
+                buckets = list(hits_terms.values())[0]
+
+                # get_hits_terms adds to num_hits, but we don't want to count these
+                self.thread_data.num_hits -= len(buckets)
+                terms = {}
+                for bucket in buckets:
+                    terms[bucket['key']] = bucket['doc_count']
+                counts = list(terms.items())
+                counts.sort(key=lambda x: x[1], reverse=True)
+                top_events_count = dict(counts[:number])
+
+            # Save a dict with the top 5 events by key
+            all_counts['top_events_%s' % (key)] = top_events_count
+            elastalert_logger.info("returning all_count %s",all_counts)
+
+        return all_counts
+    
+    def flatten_aggregated_data(self,buckets,records,key=None):
+        for bucket in buckets:
+            elastalert_logger.info("handling bucket: %s",bucket)
+            if key == None:
+                nestedkey = (str(bucket['key']))
+            else:
+                nestedkey = key + str(bucket['key'])
+            if 'bucket_aggs' in bucket:
+                records = self.flatten_aggregated_data(bucket['bucket_aggs']['buckets'],records,nestedkey)
+            else:
+                record = nestedkey + str(bucket['doc_count'])
+                elastalert_logger.info("record: %s",record)
+                records.append(record)
+        return records
+
+    
+    def get_aggregated_data(self, rule, starttime, endtime, keys, number=None, qk=None):
+        """ Counts the number of events for each unique value for each key field.
+        Returns a dictionary with top_events_<key> mapped to the top 5 counts for each key. """
+        all_counts = {}
+        if not number:
+            number = rule.get('aggregated_count_number', 10)
         for key in keys:
             index = self.get_index(rule, starttime, endtime)
 

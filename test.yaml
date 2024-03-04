@@ -1,0 +1,23 @@
+alert_params:   
+  "rum_metrics_indexing_error":
+    type: any
+    index: haystack*
+    region: us-east-1
+    realert:
+      minutes: 1
+    aggregation:
+      minutes: 5
+    aggregation_key: "kubernetes.pod.name"
+    query_key: "kubernetes.pod.name"
+    filter:
+      - query:
+          query_string:
+            query: "kubernetes.namespace: rum-logstash AND message: \"[ERROR]\""
+    alert_subject: 'Noticed RUM event indexing error'
+    alerta_severity: critical
+    alerta_environment: haystack
+    include: ["message", "kubernetes.pod.name"]
+    labels:
+      service: "rum"
+      noc_severity: p1
+      oncall: "No"

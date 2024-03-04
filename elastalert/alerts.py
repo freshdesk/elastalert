@@ -88,6 +88,16 @@ class BasicMatchString(object):
                         self.text += '%s: %s\n' % (term, count)
 
                 self.text += '\n'
+    def _add_aggregated_data(self):
+        if 'aggregated_data' in self.match:
+            list_of_tuples = self.match.get('aggregated_data', [])
+            for _tuple in list_of_tuples:
+                print("handling tuple: "+_tuple)
+                for item in _tuple:
+                    print("item : "+item)
+                    self.text += item + ','
+                self.text += "\n"
+            self.text += '\n'
 
     def _add_match_items(self):
         match_items = list(self.match.items())
@@ -124,6 +134,8 @@ class BasicMatchString(object):
             self._ensure_new_line()
             if self.rule.get('top_count_keys'):
                 self._add_top_counts()
+            if self.rule.get('agregated_keys'):
+                self._add_aggregated_data()
             if self.rule.get('alert_text_type') != 'exclude_fields':
                 self._add_match_items()
         return self.text

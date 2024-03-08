@@ -104,6 +104,20 @@ class BasicMatchString(object):
                     # Non serializable object, fallback to str
                     pass
             self.text += '%s: %s\n' % (key, value_str)
+    
+    def _add_match_items_nested(self):
+        match_items = list(self.match.items())
+        match_items.sort(key=lambda x: x[0])
+        for key, value in match_items:
+            value_str = str(value)
+            value_str.replace('\\n', '\n')
+            if type(value) in [list, dict]:
+                try:
+                    value_str = self._pretty_print_as_json(value)
+                except TypeError:
+                    # Non serializable object, fallback to str
+                    pass
+            self.text[key] = value_str
 
     def _pretty_print_as_json(self, blob):
         try:
@@ -113,20 +127,32 @@ class BasicMatchString(object):
             return json.dumps(blob, cls=DateTimeEncoder, sort_keys=True, indent=4, encoding='Latin-1', ensure_ascii=False)
 
     def __str__(self):
-        self.text = ''
-        if 'alert_text' not in self.rule:
-            self.text += self.rule['name'] + '\n\n'
+        if 'nested_query_key' in self.rule and self.rule['nested_query_key'] == True:
+            self.text= {}
+            if 'alert_text' not in self.rule:
+                self.text['elastalert_rule'] = self.rule['name']
+            if self.rule.get('alert_text_type') != 'alert_text_only' and self.rule.get('alert_text_type') != 'alert_text_jinja':
+                self.text['alert_criteria'] = self.rule['type'].get_match_str(self.match)
+                if self.rule.get('top_count_keys'):
+                    self._add_top_counts()
+                if self.rule.get('alert_text_type') != 'exclude_fields':
+                    self._add_match_items_nested()
+            return str(self.text)
+        else:
+            self.text = ''
+            if 'alert_text' not in self.rule:
+                self.text += self.rule['name'] + '\n\n'
 
-        self._add_custom_alert_text()
-        self._ensure_new_line()
-        if self.rule.get('alert_text_type') != 'alert_text_only' and self.rule.get('alert_text_type') != 'alert_text_jinja':
-            self._add_rule_text()
+            self._add_custom_alert_text()
             self._ensure_new_line()
-            if self.rule.get('top_count_keys'):
-                self._add_top_counts()
-            if self.rule.get('alert_text_type') != 'exclude_fields':
-                self._add_match_items()
-        return self.text
+            if self.rule.get('alert_text_type') != 'alert_text_only' and self.rule.get('alert_text_type') != 'alert_text_jinja':
+                self._add_rule_text()
+                self._ensure_new_line()
+                if self.rule.get('top_count_keys'):
+                    self._add_top_counts()
+                if self.rule.get('alert_text_type') != 'exclude_fields':
+                    self._add_match_items()
+            return self.text
 
 
 class Alerter(object):

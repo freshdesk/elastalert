@@ -51,8 +51,9 @@ class AlertmanagerAlerter(Alerter):
         self.labels.update(
             alertname=self.alertname,
             elastalert_rule=self.rule.get('name'),
-            query_key_fields=self.rule.get('query_key'),
-            query_key=matches[0][self.rule.get('query_key')])
+            query_key_fields=self.rule.get('query_key'))
+        if self.rule.get('query_key') in matches[0].keys():
+            self.labels.update(query_key=matches[0][self.rule.get('query_key')])
         self.annotations.update({
             self.title_labelname: self.create_title(matches),
             self.body_labelname: self.create_alert_body(matches)})

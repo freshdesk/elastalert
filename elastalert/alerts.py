@@ -127,7 +127,7 @@ class BasicMatchString(object):
             return json.dumps(blob, cls=DateTimeEncoder, sort_keys=True, indent=4, encoding='Latin-1', ensure_ascii=False)
 
     def __str__(self):
-        if 'nested_query_key' in self.rule and self.rule['nested_query_key'] == True:
+        if 'json_payload' in self.rule and self.rule['json_payload'] == True:
             self.text= {}
             if 'alert_text' not in self.rule:
                 self.text['elastalert_rule'] = self.rule['name']

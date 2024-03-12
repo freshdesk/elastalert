@@ -103,21 +103,10 @@ class BasicMatchString(object):
                 except TypeError:
                     # Non serializable object, fallback to str
                     pass
-            self.text += '%s: %s\n' % (key, value_str)
-    
-    def _add_match_items_nested(self):
-        match_items = list(self.match.items())
-        match_items.sort(key=lambda x: x[0])
-        for key, value in match_items:
-            value_str = str(value)
-            value_str.replace('\\n', '\n')
-            if type(value) in [list, dict]:
-                try:
-                    value_str = self._pretty_print_as_json(value)
-                except TypeError:
-                    # Non serializable object, fallback to str
-                    pass
-            self.text[key] = value_str
+            if (isinstance(self.text,dict)):
+                self.text[key] = value_str
+            else:
+                self.text += '%s: %s\n' % (key, value_str)
 
     def _pretty_print_as_json(self, blob):
         try:
@@ -136,13 +125,12 @@ class BasicMatchString(object):
                 if self.rule.get('top_count_keys'):
                     self._add_top_counts()
                 if self.rule.get('alert_text_type') != 'exclude_fields':
-                    self._add_match_items_nested()
+                    self._add_match_items()
             return str(self.text)
         else:
             self.text = ''
             if 'alert_text' not in self.rule:
                 self.text += self.rule['name'] + '\n\n'
-
             self._add_custom_alert_text()
             self._ensure_new_line()
             if self.rule.get('alert_text_type') != 'alert_text_only' and self.rule.get('alert_text_type') != 'alert_text_jinja':

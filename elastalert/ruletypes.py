@@ -301,7 +301,6 @@ class FrequencyRule(RuleType):
             event = self.occurrences[key].data[-1][0]
             if self.attach_related:
                 event['related_events'] = [data[0] for data in self.occurrences[key].data[:-1]]
-            if 'nested_query_key' in self.rules and self.rules['nested_query_key'] == True:
                 event['count'] = self.occurrences[key].data[-1][1]
             self.add_match(event)
             self.occurrences.pop(key)

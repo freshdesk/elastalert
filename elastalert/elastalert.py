@@ -29,6 +29,7 @@ from elasticsearch.exceptions import ConnectionError
 from elasticsearch.exceptions import ElasticsearchException
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch.exceptions import TransportError
+from elastalert.ruletypes import AdvQueryRule
 from elastalert.ruletypes import ErrorRateRule, NewTermsRule
 from elastalert.ruletypes import PercentageMatchRule
 
@@ -624,6 +625,33 @@ class ElastAlerter(object):
 
         self.thread_data.num_hits += res['hits']['total']
         return {endtime: payload}
+    
+    def get_adv_query_aggregation(self, rule, starttime, endtime, index, query_key, term_size=None):
+        rule_filter = copy.copy(rule['filter'])
+        base_query = self.get_query(
+            rule_filter,
+            starttime,
+            endtime,
+            timestamp_field=rule['timestamp_field'],
+            sort=False,
+            to_ts_func=rule['dt_to_ts'],
+        )
+        request = get_msearch_query(base_query,rule)
+        print("yoyo")
+        try:
+            #using backwards compatibile msearch
+            res = self.thread_data.current_es.msearch(body=request)
+            res = res['responses'][0]
+        except ElasticsearchException as e:
+            if len(str(e)) > 1024:
+                e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
+            self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
+            return None
+        if 'aggregations' not in res:
+            return {}
+        payload = res['aggregations']
+        self.thread_data.num_hits += res['hits']['total']
+        return {endtime: payload}
 
 
     #trace_alert specific error rate method
@@ -689,7 +717,7 @@ class ElastAlerter(object):
         elastalert_logger.info("request data is %s" % json.dumps(data))
         # res = requests.post(self.query_endpoint, json=data)
         # return None, None
-
+    
     def remove_duplicate_events(self, data, rule):
         new_events = []
         for event in data:
@@ -740,6 +768,8 @@ class ElastAlerter(object):
         index = self.get_index(rule, start, end)
         if isinstance(rule_inst, NewTermsRule):
             data = self.get_terms_data(rule, start, end)
+        #elif isinstance(rule_inst, AdvQueryRule):
+        #    data = self.get_adv_query_data(rule, start, end,index,scroll)
         elif rule.get('use_count_query'):
             data = self.get_hits_count(rule, start, end, index)
         elif rule.get('use_terms_query'):
@@ -747,7 +777,12 @@ class ElastAlerter(object):
         elif isinstance(rule_inst, ErrorRateRule):
             data = self.get_error_rate(rule, start, end)
         elif rule.get('aggregation_query_element'):
-            data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
+            print("in agg query element")
+            if isinstance(rule_inst, AdvQueryRule):
+                data = self.get_adv_query_aggregation(rule, start, end,index,rule.get('query_key', None))
+            else:
+                data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
+
         else:
             data = self.get_hits(rule, start, end, index, scroll)
             if data:

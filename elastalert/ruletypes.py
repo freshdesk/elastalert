@@ -746,6 +746,10 @@ class AdvQueryRule(RuleType):
             if 'buckets' in value:
                 if len(value['buckets']) >=0 :
                     self.check_matches_recursive(key,value['buckets'],timestamp)
+            else:
+                if self.crossed_thresholds(value['value']):
+                    match={"key":key,"value":value['value']}
+                    self.add_match(match)
 
     def check_matches_recursive(self,data_key,data_value,timestamp,data_key_value=''):
         key = data_key

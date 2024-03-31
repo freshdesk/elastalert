@@ -301,6 +301,7 @@ class FrequencyRule(RuleType):
             event = self.occurrences[key].data[-1][0]
             if self.attach_related:
                 event['related_events'] = [data[0] for data in self.occurrences[key].data[:-1]]
+            event['count'] = self.occurrences[key].data[-1][1]
             self.add_match(event)
             self.occurrences.pop(key)
 
@@ -720,6 +721,61 @@ class SpikeRule(RuleType):
                 placeholder.update({self.rules['query_key']: qk})
             self.handle_event(placeholder, 0, qk)
 
+class AdvQueryRule(RuleType):
+    """ A rule that uses a query_string query to perform a search """
+    required_options = frozenset(['alert_field'])
+
+    def __init__(self, *args):
+        super(AdvQueryRule, self).__init__(*args)
+        if 'max_threshold' not in self.rules and 'min_threshold' not in self.rules:
+            raise EAException("AdvQueryRule must have one of either max_threshold or min_threshold")
+        #self.query_string = self.rules.get('query_string')
+        self.rules['aggregation_query_element'] = {"query": ""}
+
+    def run_query(self):
+        # Implement the logic to run the query using the query_string
+        raise NotImplementedError()
+
+    def add_aggregation_data(self, payload):
+        for timestamp, payload_data in payload.items():
+            self.check_matches(payload_data,timestamp)
+    
+    def check_matches(self,data,timestamp):
+        #results=[]
+        for key, value in data.items():
+            if 'buckets' in value:
+                if len(value['buckets']) >=0 :
+                    self.check_matches_recursive(key,value['buckets'],timestamp)
+
+    def check_matches_recursive(self,data_key,data_value,timestamp,data_key_value=''):
+        key = data_key
+        if len(data_value) > 0:
+            for data in data_value:
+                local_data_key = data_key_value
+                data_key_value = data_key_value+ ','+ data['key'] if data_key_value else data['key']
+                for k,v in data.items():
+                    if k!= 'key' and k!= 'doc_count':
+                        if 'buckets' in v:
+                            local_key = key
+                            key = key + ','+k
+                            self.check_matches_recursive(key,v['buckets'],data_key_value)
+                            key = local_key
+                        else:
+                            if self.rules['alert_field'] in k:
+                                if self.crossed_thresholds(v['value']):
+                                    match={"key": key,"value":v['value'],"key_value":data_key_value,self.rules['timestamp_field']: timestamp}
+                                    self.add_match(match)
+                data_key_value = local_data_key
+    
+    def crossed_thresholds(self, metric_value):
+        if metric_value is None:
+            return False
+        if 'max_threshold' in self.rules and float(metric_value) > self.rules['max_threshold']:
+            return True
+        if 'min_threshold' in self.rules and float(metric_value) < self.rules['min_threshold']:
+            return True
+        return False
+    
 
 class FlatlineRule(FrequencyRule):
     """ A rule that matches when there is a low number of events given a timeframe. """
@@ -752,6 +808,7 @@ class FlatlineRule(FrequencyRule):
             # Do a deep-copy, otherwise we lose the datetime type in the timestamp field of the last event
             event = copy.deepcopy(self.occurrences[key].data[-1][0])
             event.update(key=key, count=count)
+            event[self.rules['query_key']]=key
             self.add_match(event)
 
             if not self.rules.get('forget_keys'):

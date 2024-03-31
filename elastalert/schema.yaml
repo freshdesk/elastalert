@@ -220,6 +220,12 @@ oneOf:
       error_condition: {type: string}
       unique_column: {type: string}
 
+  - title: Adv Query
+    required: []
+    properties:
+      type: {enum: [adv_query]}
+
+
 properties:
 
   # Common Settings

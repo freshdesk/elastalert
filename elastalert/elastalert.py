@@ -29,7 +29,7 @@ from elasticsearch.exceptions import ConnectionError
 from elasticsearch.exceptions import ElasticsearchException
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch.exceptions import TransportError
-from elastalert.ruletypes import AdvQueryRule
+from elastalert.ruletypes import AdvanceSearchRule
 from elastalert.ruletypes import ErrorRateRule, NewTermsRule
 from elastalert.ruletypes import PercentageMatchRule
 
@@ -775,7 +775,7 @@ class ElastAlerter(object):
             data = self.get_error_rate(rule, start, end)
         elif rule.get('aggregation_query_element'):
             elastalert_logger.info("in agg query element")
-            if isinstance(rule_inst, AdvQueryRule):
+            if isinstance(rule_inst, AdvanceSearchRule):
                 data = self.get_adv_query_aggregation(rule, start, end,index,rule.get('query_key', None))
             else:
                 data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))

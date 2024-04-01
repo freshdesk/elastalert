@@ -725,9 +725,9 @@ class AdvanceSearchRule(RuleType):
     required_options = frozenset(['alert_field'])
 
     def __init__(self, *args):
-        super(AdvQueryRule, self).__init__(*args)
+        super(AdvanceSearchRule, self).__init__(*args)
         if 'max_threshold' not in self.rules and 'min_threshold' not in self.rules:
-            raise EAException("AdvQueryRule must have one of either max_threshold or min_threshold")
+            raise EAException("AdvanceSearchRule must have one of either max_threshold or min_threshold")
         #self.query_string = self.rules.get('query_string')
         self.rules['aggregation_query_element'] = {"query": ""}
 

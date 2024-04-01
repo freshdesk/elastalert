@@ -626,7 +626,7 @@ class ElastAlerter(object):
         self.thread_data.num_hits += res['hits']['total']
         return {endtime: payload}
     
-    def get_adv_query_aggregation(self, rule, starttime, endtime, index, query_key, term_size=None):
+    def get_adv_query_aggregation(self, rule, starttime, endtime, index, term_size=None):
         rule_filter = copy.copy(rule['filter'])
         base_query = self.get_query(
             rule_filter,
@@ -776,7 +776,7 @@ class ElastAlerter(object):
         elif rule.get('aggregation_query_element'):
             elastalert_logger.info("in agg query element")
             if isinstance(rule_inst, AdvanceSearchRule):
-                data = self.get_adv_query_aggregation(rule, start, end,index,rule.get('query_key', None))
+                data = self.get_adv_query_aggregation(rule, start, end,index)
             else:
                 data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
 

@@ -731,10 +731,6 @@ class AdvanceSearchRule(RuleType):
         #self.query_string = self.rules.get('query_string')
         self.rules['aggregation_query_element'] = {"query": ""}
 
-    def run_query(self):
-        # Implement the logic to run the query using the query_string
-        raise NotImplementedError()
-
     def add_aggregation_data(self, payload):
         for timestamp, payload_data in payload.items():
             self.check_matches(payload_data,timestamp)

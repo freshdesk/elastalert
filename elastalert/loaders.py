@@ -94,7 +94,7 @@ class RulesLoader(object):
         'percentage_match': ruletypes.PercentageMatchRule,
         'spike_aggregation': ruletypes.SpikeMetricAggregationRule,
         'error_rate': ruletypes.ErrorRateRule,  #Adding Error Rate Rule type
-        'adv_query': ruletypes.AdvQueryRule
+        'advance_search': ruletypes.AdvanceSearchRule
     }
 
     # Used to map names of alerts to their classes

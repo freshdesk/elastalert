@@ -637,7 +637,6 @@ class ElastAlerter(object):
             to_ts_func=rule['dt_to_ts'],
         )
         request = get_msearch_query(base_query,rule)
-        print("yoyo")
         try:
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
@@ -775,7 +774,7 @@ class ElastAlerter(object):
         elif isinstance(rule_inst, ErrorRateRule):
             data = self.get_error_rate(rule, start, end)
         elif rule.get('aggregation_query_element'):
-            print("in agg query element")
+            elastalert_logger.info("in agg query element")
             if isinstance(rule_inst, AdvQueryRule):
                 data = self.get_adv_query_aggregation(rule, start, end,index,rule.get('query_key', None))
             else:

@@ -301,7 +301,6 @@ class FrequencyRule(RuleType):
             event = self.occurrences[key].data[-1][0]
             if self.attach_related:
                 event['related_events'] = [data[0] for data in self.occurrences[key].data[:-1]]
-            event['count'] = self.occurrences[key].data[-1][1]
             self.add_match(event)
             self.occurrences.pop(key)
 
@@ -721,8 +720,8 @@ class SpikeRule(RuleType):
                 placeholder.update({self.rules['query_key']: qk})
             self.handle_event(placeholder, 0, qk)
 
-class AdvQueryRule(RuleType):
-    """ A rule that uses a query_string query to perform a search """
+class AdvanceSearchRule(RuleType):
+    """ A rule that uses a query_string query to perform a advanced search like parsing, evaluating conditions, calculating aggs etc """
     required_options = frozenset(['alert_field'])
 
     def __init__(self, *args):
@@ -748,28 +747,28 @@ class AdvQueryRule(RuleType):
                     self.check_matches_recursive(key,value['buckets'],timestamp)
             else:
                 if self.crossed_thresholds(value['value']):
-                    match={"key":key,"value":value['value']}
+                    match={"key":key,"value":value['value'],self.rules['timestamp_field']:timestamp}
                     self.add_match(match)
 
-    def check_matches_recursive(self,data_key,data_value,timestamp,data_key_value=''):
-        key = data_key
+    def check_matches_recursive(self,top_level_key,buckets,timestamp,key_prefix=''):
+        key = top_level_key
         if len(data_value) > 0:
-            for data in data_value:
-                local_data_key = data_key_value
-                data_key_value = data_key_value+ ','+ data['key'] if data_key_value else data['key']
+            for data in buckets:
+                local_key_prefix = key_prefix
+                key_prefix = key_prefix+ ','+ data['key'] if key_prefix else data['key']
                 for k,v in data.items():
                     if k!= 'key' and k!= 'doc_count':
                         if 'buckets' in v:
                             local_key = key
                             key = key + ','+k
-                            self.check_matches_recursive(key,v['buckets'],data_key_value)
+                            self.check_matches_recursive(key,v['buckets'],key_prefix)
                             key = local_key
                         else:
                             if self.rules['alert_field'] in k:
                                 if self.crossed_thresholds(v['value']):
-                                    match={"key": key,"value":v['value'],"key_value":data_key_value,self.rules['timestamp_field']: timestamp}
+                                    match={"key": key,"value":v['value'],"key_value":key_prefix,self.rules['timestamp_field']: timestamp}
                                     self.add_match(match)
-                data_key_value = local_data_key
+                key_prefix = local_key_prefix
     
     def crossed_thresholds(self, metric_value):
         if metric_value is None:

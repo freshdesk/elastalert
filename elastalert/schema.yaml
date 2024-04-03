@@ -220,10 +220,10 @@ oneOf:
       error_condition: {type: string}
       unique_column: {type: string}
 
-  - title: Advance Search
+  - title: Advanced Query
     required: [alert_field]
     properties:
-      type: {enum: [advance_search]}
+      type: {enum: [advanced_query]}
 
 
 properties:

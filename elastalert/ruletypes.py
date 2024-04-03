@@ -720,14 +720,14 @@ class SpikeRule(RuleType):
                 placeholder.update({self.rules['query_key']: qk})
             self.handle_event(placeholder, 0, qk)
 
-class AdvanceSearchRule(RuleType):
+class AdvancedQueryRule(RuleType):
     """ A rule that uses a query_string query to perform a advanced search like parsing, evaluating conditions, calculating aggs etc """
     required_options = frozenset(['alert_field'])
 
     def __init__(self, *args):
-        super(AdvanceSearchRule, self).__init__(*args)
+        super(AdvancedQueryRule, self).__init__(*args)
         if 'max_threshold' not in self.rules and 'min_threshold' not in self.rules:
-            raise EAException("AdvanceSearchRule must have one of either max_threshold or min_threshold")
+            raise EAException("AdvancedQueryRule must have one of either max_threshold or min_threshold")
         #self.query_string = self.rules.get('query_string')
         self.rules['aggregation_query_element'] = {"query": ""}
 

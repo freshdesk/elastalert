@@ -740,42 +740,44 @@ class AdvancedQueryRule(RuleType):
         for key, value in data.items():
             if 'buckets' in value:
                 if len(value['buckets']) >=0 :
-                    results = self.flatten_results(key,value['buckets'],self.rules['alert_field'],group={},results)
+                    results = self.flatten_results(key,value['buckets'],self.rules['alert_field'],{},results)
             else:
                 if self.crossed_thresholds(value['value']):
                     match={"key":key,"count":value['value'],self.rules['timestamp_field']:timestamp}
                     self.add_match(match)
         if len(results) > 0:
-            for event in result:
+            for event in results:
                 if self.crossed_thresholds(event[self.rules['alert_field']]):
-                    key=''
-                    value=''
-                    #looping the object to form rdata structure in required format
+                    #looping the object to form data structure in required format
+                    group_by_keys=[]
+                    group_by_values=[]
                     for k,v in event.items():
-                        if k!= self.rules['alert_field']:
-                            key = key + ',' + k if key.endswith(',') else key + k
-                            value = value + ',' + string(v) if value.endswith(',') else value + string(v)
+                        if self.rules['alert_field'] not in k :
+                            group_by_keys.append(k)
+                            group_by_values.append(v)
                         else:
                             count = value
-                    match={key:value,"count":count,self.rules['timestamp_field']:timestamp} 
+                    group_by_key = ','.join(group_by_keys)
+                    group_by_value = ','.join(group_by_values)
+                    match={group_by_key:group_by_value,"count":count,self.rules['timestamp_field']:timestamp} 
                     self.add_match(match)
     
     #function to flatten the aggregated data. This returns an array of dictionaries which has corresponding key, value
     #group starts initially empty and as we progress we keep adding this groups.     
-    def flatten_results(k,v,alert_field,group={},results=[]):
-    for item in v:
-        temp_group={} #temp group to start the loop back again with empty, if at all one iteration is completed
-        group[k]=item['key']
-        for k1,v1 in item.items():
-            if isinstance(v1,dict):
-                if "buckets" in v1:
-                    flatten_results(k1,v1['buckets'],alert_field,group,results)
-                elif alert_field in k1:
-                    temp_group.update(group)
-                    group[alert_field] = v1['value']
-                    results.append(group)
-                    group=temp_group
-    return results
+    def flatten_results(key,value,alert_field,group={},results=[]):
+        for item in value:
+            temp_group={} #temp group to start the loop back again with empty, if at all one iteration is completed
+            group[key]=item['key']
+            for k,v in item.items():
+                if isinstance(v,dict):
+                    if "buckets" in v:
+                        flatten_results(k,v['buckets'],alert_field,group,results)
+                    elif alert_field in k:
+                        temp_group.update(group)
+                        group[alert_field] = v['value']
+                        results.append(group)
+                        group=temp_group
+        return results
 
     def crossed_thresholds(self, metric_value):
         if metric_value is None:

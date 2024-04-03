@@ -736,36 +736,47 @@ class AdvanceSearchRule(RuleType):
             self.check_matches(payload_data,timestamp)
     
     def check_matches(self,data,timestamp):
-        #results=[]
+        results=[]
         for key, value in data.items():
             if 'buckets' in value:
                 if len(value['buckets']) >=0 :
-                    self.check_matches_recursive(key,value['buckets'],timestamp)
+                    results = self.flatten_results(key,value['buckets'],self.rules['alert_field'],group={},results)
             else:
                 if self.crossed_thresholds(value['value']):
-                    match={"key":key,"value":value['value'],self.rules['timestamp_field']:timestamp}
+                    match={"key":key,"count":value['value'],self.rules['timestamp_field']:timestamp}
                     self.add_match(match)
-
-    def check_matches_recursive(self,top_level_key,buckets,timestamp,key_prefix=''):
-        key = top_level_key
-        if len(data_value) > 0:
-            for data in buckets:
-                local_key_prefix = key_prefix
-                key_prefix = key_prefix+ ','+ data['key'] if key_prefix else data['key']
-                for k,v in data.items():
-                    if k!= 'key' and k!= 'doc_count':
-                        if 'buckets' in v:
-                            local_key = key
-                            key = key + ','+k
-                            self.check_matches_recursive(key,v['buckets'],key_prefix)
-                            key = local_key
+        if len(results) > 0:
+            for event in result:
+                if self.crossed_thresholds(event[self.rules['alert_field']]):
+                    key=''
+                    value=''
+                    #looping the object to form rdata structure in required format
+                    for k,v in event.items():
+                        if k!= self.rules['alert_field']:
+                            key = key + ',' + k if key.endswith(',') else key + k
+                            value = value + ',' + string(v) if value.endswith(',') else value + string(v)
                         else:
-                            if self.rules['alert_field'] in k:
-                                if self.crossed_thresholds(v['value']):
-                                    match={"key": key,"value":v['value'],"key_value":key_prefix,self.rules['timestamp_field']: timestamp}
-                                    self.add_match(match)
-                key_prefix = local_key_prefix
+                            count = value
+                    match={key:value,"count":count,self.rules['timestamp_field']:timestamp} 
+                    self.add_match(match)
     
+    #function to flatten the aggregated data. This returns an array of dictionaries which has corresponding key, value
+    #group starts initially empty and as we progress we keep adding this groups.     
+    def flatten_results(k,v,alert_field,group={},results=[]):
+    for item in v:
+        temp_group={} #temp group to start the loop back again with empty, if at all one iteration is completed
+        group[k]=item['key']
+        for k1,v1 in item.items():
+            if isinstance(v1,dict):
+                if "buckets" in v1:
+                    flatten_results(k1,v1['buckets'],alert_field,group,results)
+                elif alert_field in k1:
+                    temp_group.update(group)
+                    group[alert_field] = v1['value']
+                    results.append(group)
+                    group=temp_group
+    return results
+
     def crossed_thresholds(self, metric_value):
         if metric_value is None:
             return False

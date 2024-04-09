@@ -29,7 +29,7 @@ from elasticsearch.exceptions import ConnectionError
 from elasticsearch.exceptions import ElasticsearchException
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch.exceptions import TransportError
-from elastalert.ruletypes import AdvQueryRule
+from elastalert.ruletypes import AdvancedQueryRule
 from elastalert.ruletypes import ErrorRateRule, NewTermsRule
 from elastalert.ruletypes import PercentageMatchRule
 
@@ -626,7 +626,7 @@ class ElastAlerter(object):
         self.thread_data.num_hits += res['hits']['total']
         return {endtime: payload}
     
-    def get_adv_query_aggregation(self, rule, starttime, endtime, index, query_key, term_size=None):
+    def get_adv_query_aggregation(self, rule, starttime, endtime, index, term_size=None):
         rule_filter = copy.copy(rule['filter'])
         base_query = self.get_query(
             rule_filter,
@@ -637,7 +637,6 @@ class ElastAlerter(object):
             to_ts_func=rule['dt_to_ts'],
         )
         request = get_msearch_query(base_query,rule)
-        print("yoyo")
         try:
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
@@ -768,8 +767,6 @@ class ElastAlerter(object):
         index = self.get_index(rule, start, end)
         if isinstance(rule_inst, NewTermsRule):
             data = self.get_terms_data(rule, start, end)
-        #elif isinstance(rule_inst, AdvQueryRule):
-        #    data = self.get_adv_query_data(rule, start, end,index,scroll)
         elif rule.get('use_count_query'):
             data = self.get_hits_count(rule, start, end, index)
         elif rule.get('use_terms_query'):
@@ -777,9 +774,9 @@ class ElastAlerter(object):
         elif isinstance(rule_inst, ErrorRateRule):
             data = self.get_error_rate(rule, start, end)
         elif rule.get('aggregation_query_element'):
-            print("in agg query element")
-            if isinstance(rule_inst, AdvQueryRule):
-                data = self.get_adv_query_aggregation(rule, start, end,index,rule.get('query_key', None))
+            elastalert_logger.info("in agg query element")
+            if isinstance(rule_inst, AdvancedQueryRule):
+                data = self.get_adv_query_aggregation(rule, start, end,index)
             else:
                 data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
 
@@ -1071,7 +1068,9 @@ class ElastAlerter(object):
         # Process any new matches
         num_matches = len(rule['type'].matches)
         while rule['type'].matches:
+            print("in while")
             match = rule['type'].matches.pop(0)
+            print(match)
             match['num_hits'] = self.thread_data.cumulative_hits
             match['num_matches'] = num_matches
 
@@ -1088,10 +1087,12 @@ class ElastAlerter(object):
                 continue
 
             if rule['realert']:
+                print("in realert")
                 next_alert, exponent = self.next_alert_time(rule, silence_cache_key, ts_now())
                 self.set_realert(silence_cache_key, next_alert, exponent)
 
             if rule.get('run_enhancements_first'):
+                print("in enahancement")
                 try:
                     for enhancement in rule['match_enhancements']:
                         try:
@@ -1103,6 +1104,8 @@ class ElastAlerter(object):
 
             # If no aggregation, alert immediately
             if not rule['aggregation']:
+                print(match)
+                print("before sendalert")
                 self.alert([match], rule)
                 continue
 
@@ -1796,6 +1799,7 @@ class ElastAlerter(object):
         return res['hits']['hits'][0]
 
     def add_aggregated_alert(self, match, rule):
+        print("doing something")
         """ Save a match as a pending aggregate alert to Elasticsearch. """
 
         # Optionally include the 'aggregation_key' as a dimension for aggregations

@@ -1068,9 +1068,7 @@ class ElastAlerter(object):
         # Process any new matches
         num_matches = len(rule['type'].matches)
         while rule['type'].matches:
-            print("in while")
             match = rule['type'].matches.pop(0)
-            print(match)
             match['num_hits'] = self.thread_data.cumulative_hits
             match['num_matches'] = num_matches
 
@@ -1087,12 +1085,10 @@ class ElastAlerter(object):
                 continue
 
             if rule['realert']:
-                print("in realert")
                 next_alert, exponent = self.next_alert_time(rule, silence_cache_key, ts_now())
                 self.set_realert(silence_cache_key, next_alert, exponent)
 
             if rule.get('run_enhancements_first'):
-                print("in enahancement")
                 try:
                     for enhancement in rule['match_enhancements']:
                         try:
@@ -1104,8 +1100,6 @@ class ElastAlerter(object):
 
             # If no aggregation, alert immediately
             if not rule['aggregation']:
-                print(match)
-                print("before sendalert")
                 self.alert([match], rule)
                 continue
 
@@ -1799,7 +1793,6 @@ class ElastAlerter(object):
         return res['hits']['hits'][0]
 
     def add_aggregated_alert(self, match, rule):
-        print("doing something")
         """ Save a match as a pending aggregate alert to Elasticsearch. """
 
         # Optionally include the 'aggregation_key' as a dimension for aggregations

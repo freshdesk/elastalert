@@ -737,17 +737,11 @@ class AdvancedQueryRule(RuleType):
     
     def check_matches(self,data,timestamp):
         results=[]
-        group={}
-        print(data)
-        print("in data")
         for key, value in data.items():
             if 'buckets' in value:
-                print("in if yo")
                 if len(value['buckets']) >0 :
                     results = self.flatten_results(key,value['buckets'],self.rules['alert_field'],{},results)
             else:
-                print("in else yo")
-                print(key + value)
                 if self.crossed_thresholds(value['value']):
                     match={"key":key,"count":value['value'],self.rules['timestamp_field']:timestamp}
                     self.add_match(match)
@@ -766,8 +760,6 @@ class AdvancedQueryRule(RuleType):
                     group_by_key = ','.join(group_by_keys)
                     group_by_value = ','.join(group_by_values)
                     match={"key":group_by_key,"value":group_by_value,"count":count,self.rules['timestamp_field']:timestamp} 
-                    print(match)
-                    print("in match")
                     self.add_match(match)
     
     #function to flatten the aggregated data. This returns an array of dictionaries which has corresponding key, value

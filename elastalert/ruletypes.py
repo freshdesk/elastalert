@@ -301,6 +301,7 @@ class FrequencyRule(RuleType):
             event = self.occurrences[key].data[-1][0]
             if self.attach_related:
                 event['related_events'] = [data[0] for data in self.occurrences[key].data[:-1]]
+            event['count'] = self.occurrences[key].count()
             self.add_match(event)
             self.occurrences.pop(key)
 

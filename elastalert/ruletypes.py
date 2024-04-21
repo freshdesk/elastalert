@@ -744,7 +744,7 @@ class AdvancedQueryRule(RuleType):
                     results = self.flatten_results(key,value['buckets'],self.rules['alert_field'],{},results)
             else:
                 if self.crossed_thresholds(value['value']):
-                    match={"key":key,"count":value['value'],self.rules['timestamp_field']:timestamp}
+                    match={"key":self.rules['alert_field'],"count":value['value'],self.rules['timestamp_field']:timestamp}
                     self.add_match(match)
         if len(results) > 0:
             for event in results:

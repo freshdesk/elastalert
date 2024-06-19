@@ -402,7 +402,7 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
-            self.thread_data.total_hits = int(res['hits']['total'])
+            self.thread_data.total_hits = int(res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
 
             #removed scroll as it aint supported
             # if scroll:
@@ -523,11 +523,10 @@ class ElastAlerter(object):
             self.handle_error('Error running count query: %s' % (e), {'rule': rule['name'], 'query': query})
             return None
 
-        self.thread_data.num_hits += res['hits']['total']
-        lt = rule.get('use_local_time')
+        self.thread_data.num_hits += (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])        lt = rule.get('use_local_time')
         elastalert_logger.info(
             "Queried rule %s from %s to %s: %s hits" % (rule['name'], pretty_ts(starttime, lt, self.pretty_ts_format),
-                                                        pretty_ts(endtime, lt, self.pretty_ts_format), res['hits']['total'])
+                                                        pretty_ts(endtime, lt, self.pretty_ts_format), (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total']))
         )
         
         if len(res['hits']['hits']) > 0 :
@@ -535,7 +534,7 @@ class ElastAlerter(object):
         else:
             event= self.process_hits(rule,[{'_source': {'@timestamp': endtime}}])
             
-        return {"endtime":endtime,"count": res['hits']['total'],"event": event}
+        return {"endtime":endtime,"count": (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total']),"event": event}
         #return {endtime: res['hits']['total']}
 
     def get_hits_terms(self, rule, starttime, endtime, index, key, qk=None, size=None):
@@ -623,7 +622,7 @@ class ElastAlerter(object):
             return {}
         payload = res['aggregations']
 
-        self.thread_data.num_hits += res['hits']['total']
+        self.thread_data.num_hits += (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
         return {endtime: payload}
     
     def get_adv_query_aggregation(self, rule, starttime, endtime, index, term_size=None):
@@ -649,7 +648,7 @@ class ElastAlerter(object):
         if 'aggregations' not in res:
             return {}
         payload = res['aggregations']
-        self.thread_data.num_hits += res['hits']['total']
+        self.thread_data.num_hits += int(res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
         return {endtime: payload}
 
 

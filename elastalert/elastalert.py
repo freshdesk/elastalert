@@ -523,7 +523,8 @@ class ElastAlerter(object):
             self.handle_error('Error running count query: %s' % (e), {'rule': rule['name'], 'query': query})
             return None
 
-        self.thread_data.num_hits += (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])        lt = rule.get('use_local_time')
+        self.thread_data.num_hits += (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total']) 
+        lt = rule.get('use_local_time')
         elastalert_logger.info(
             "Queried rule %s from %s to %s: %s hits" % (rule['name'], pretty_ts(starttime, lt, self.pretty_ts_format),
                                                         pretty_ts(endtime, lt, self.pretty_ts_format), (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total']))

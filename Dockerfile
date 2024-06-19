@@ -16,7 +16,7 @@ RUN python setup.py install
 RUN pip show elastalert2
 
 
-FROM gcr.io/distroless/python3:debug as runtime
+FROM gcr.io/distroless/python3:debug@sha256:e5eb1348c23118d52d03defafa1eddf3a0aea116bd08711cc31ebf657d7fd040 as runtime
 
 COPY --from=build /opt/elastalert /opt/elastalert
 COPY --from=build /usr/local/bin/elastalert* /usr/local/bin/

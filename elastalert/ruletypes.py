@@ -754,8 +754,8 @@ class AdvancedQueryRule(RuleType):
                     group_by_values=[]
                     for k,v in event.items():
                         if self.rules['alert_field'] not in k :
-                            group_by_keys.append(k)
-                            group_by_values.append(v)
+                            group_by_keys.append(str(k))
+                            group_by_values.append(str(v))
                         else:
                             count = v
                     group_by_key = ','.join(group_by_keys)

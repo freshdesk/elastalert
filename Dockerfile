@@ -1,4 +1,4 @@
-FROM python:3.9-alpine as build
+FROM python:3.9-alpine@sha256:9e5d43f27e1e9f3bf9dd06c37dce082801b87564bb0f1d0746174709026b80a1 as build
 
 ENV ELASTALERT_HOME /opt/elastalert
 ADD . /opt/elastalert/

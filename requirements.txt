@@ -14,7 +14,7 @@ mock>=5.1.0
 prison==0.2.1
 prometheus_client==0.13.1
 py-zabbix==1.1.7
-python-dateutil==2.9.2
+python-dateutil==2.9.0
 PyYAML==6.0.1
 requests==2.32.3
 stomp.py==8.1.2

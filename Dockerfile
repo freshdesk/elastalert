@@ -6,7 +6,7 @@ ADD . /opt/elastalert/
 WORKDIR /opt
 
 #RUN apk add --update --no-cache jq curl gcc openssl-dev libffi-dev ca-certificates musl-dev
-RUN apk add --update --no-cache \
+RUN apk add --no-cache \
     jq=1.7.1-r0 \
     curl=8.7.1-r0 \
     gcc=13.2.1_git20240309-r0 \

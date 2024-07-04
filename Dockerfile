@@ -5,15 +5,21 @@ ADD . /opt/elastalert/
 
 WORKDIR /opt
 
-#RUN apk add --update --no-cache jq curl gcc openssl-dev libffi-dev ca-certificates musl-dev
-RUN apk add --no-cache \
-    jq=1.7.1-r0 \
-    curl=8.7.1-r0 \
-    gcc=13.2.1_git20240309-r0 \
-    openssl-dev=3.3.1-r0 \
-    libffi-dev=3.4.6-r0 \
-    ca-certificates=20240226-r0 \
-    musl-dev=1.2.5-r0
+RUN apk add --update --no-cache jq curl gcc openssl-dev libffi-dev ca-certificates musl-dev
+#RUN apk add --update --no-cache gcc libffi-dev
+#RUN apk info -a | grep curl
+#RUN apk info -a | grep openssl-dev
+#RUN apk search -v curl
+#RUN apk search -v openssl-dev
+
+#RUN apk add --no-cache \
+#    jq=1.7.1-r0 \
+#    curl=8.7.1-r0 \
+#    gcc=13.2.1_git20240309-r0 \
+#    openssl-dev=3.3.1-r0 \
+#    libffi-dev=3.4.6-r0 \
+#    ca-certificates=20240226-r0 \
+#    musl-dev=1.2.5-r0
 
 RUN pip install "setuptools==65.5.0" "elasticsearch==6.3.1"
 

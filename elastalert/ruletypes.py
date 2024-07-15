@@ -301,6 +301,7 @@ class FrequencyRule(RuleType):
             event = self.occurrences[key].data[-1][0]
             if self.attach_related:
                 event['related_events'] = [data[0] for data in self.occurrences[key].data[:-1]]
+            event['count'] = self.occurrences[key].count()
             self.add_match(event)
             self.occurrences.pop(key)
 
@@ -720,6 +721,74 @@ class SpikeRule(RuleType):
                 placeholder.update({self.rules['query_key']: qk})
             self.handle_event(placeholder, 0, qk)
 
+class AdvancedQueryRule(RuleType):
+    """ A rule that uses a query_string query to perform a advanced search like parsing, evaluating conditions, calculating aggs etc """
+    required_options = frozenset(['alert_field'])
+
+    def __init__(self, *args):
+        super(AdvancedQueryRule, self).__init__(*args)
+        if 'max_threshold' not in self.rules and 'min_threshold' not in self.rules:
+            raise EAException("AdvancedQueryRule must have one of either max_threshold or min_threshold")
+        #self.query_string = self.rules.get('query_string')
+        self.rules['aggregation_query_element'] = {"query": ""}
+
+    def add_aggregation_data(self, payload):
+        for timestamp, payload_data in payload.items():
+            self.check_matches(payload_data,timestamp)
+    
+    def check_matches(self,data,timestamp):
+        results=[]
+        for key, value in data.items():
+            if 'buckets' in value:
+                if len(value['buckets']) >0 :
+                    results = self.flatten_results(key,value['buckets'],self.rules['alert_field'],{},results)
+            else:
+                if self.crossed_thresholds(value['value']):
+                    match={"key":self.rules['alert_field'],"count":value['value'],self.rules['timestamp_field']:timestamp}
+                    self.add_match(match)
+        if len(results) > 0:
+            for event in results:
+                if self.crossed_thresholds(event[self.rules['alert_field']]):
+                    #looping the object to form data structure in required format
+                    group_by_keys=[]
+                    group_by_values=[]
+                    for k,v in event.items():
+                        if self.rules['alert_field'] not in k :
+                            group_by_keys.append(str(k))
+                            group_by_values.append(str(v))
+                        else:
+                            count = v
+                    group_by_key = ','.join(group_by_keys)
+                    group_by_value = ','.join(group_by_values)
+                    match={"key":group_by_key,"value":group_by_value,"count":count,self.rules['timestamp_field']:timestamp} 
+                    self.add_match(match)
+    
+    #function to flatten the aggregated data. This returns an array of dictionaries which has corresponding key, value
+    #group starts initially empty and as we progress we keep adding this groups.     
+    def flatten_results(self,key,value,alert_field,group,results=[]):
+        for item in value:
+            temp_group={} #temp group to start the loop back again with empty, if at all one iteration is completed
+            group[key]=item['key']
+            for k,v in item.items():
+                if isinstance(v,dict):
+                    if "buckets" in v:
+                        self.flatten_results(k,v['buckets'],alert_field,group,results)
+                    elif alert_field in k:
+                        temp_group.update(group)
+                        group[alert_field] = v['value']
+                        results.append(group)
+                        group=temp_group
+        return results
+
+    def crossed_thresholds(self, metric_value):
+        if metric_value is None:
+            return False
+        if 'max_threshold' in self.rules and float(metric_value) > self.rules['max_threshold']:
+            return True
+        if 'min_threshold' in self.rules and float(metric_value) < self.rules['min_threshold']:
+            return True
+        return False
+    
 
 class FlatlineRule(FrequencyRule):
     """ A rule that matches when there is a low number of events given a timeframe. """
@@ -752,6 +821,7 @@ class FlatlineRule(FrequencyRule):
             # Do a deep-copy, otherwise we lose the datetime type in the timestamp field of the last event
             event = copy.deepcopy(self.occurrences[key].data[-1][0])
             event.update(key=key, count=count)
+            event[self.rules['query_key']]=key
             self.add_match(event)
 
             if not self.rules.get('forget_keys'):

@@ -29,6 +29,7 @@ from elasticsearch.exceptions import ConnectionError
 from elasticsearch.exceptions import ElasticsearchException
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch.exceptions import TransportError
+from elastalert.ruletypes import AdvancedQueryRule
 from elastalert.ruletypes import ErrorRateRule, NewTermsRule
 from elastalert.ruletypes import PercentageMatchRule
 
@@ -401,7 +402,7 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
-            self.thread_data.total_hits = int(res['hits']['total'])
+            self.thread_data.total_hits = int(res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
 
             #removed scroll as it aint supported
             # if scroll:
@@ -522,11 +523,11 @@ class ElastAlerter(object):
             self.handle_error('Error running count query: %s' % (e), {'rule': rule['name'], 'query': query})
             return None
 
-        self.thread_data.num_hits += res['hits']['total']
+        self.thread_data.num_hits += (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total']) 
         lt = rule.get('use_local_time')
         elastalert_logger.info(
             "Queried rule %s from %s to %s: %s hits" % (rule['name'], pretty_ts(starttime, lt, self.pretty_ts_format),
-                                                        pretty_ts(endtime, lt, self.pretty_ts_format), res['hits']['total'])
+                                                        pretty_ts(endtime, lt, self.pretty_ts_format), (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total']))
         )
         
         if len(res['hits']['hits']) > 0 :
@@ -534,7 +535,7 @@ class ElastAlerter(object):
         else:
             event= self.process_hits(rule,[{'_source': {'@timestamp': endtime}}])
             
-        return {"endtime":endtime,"count": res['hits']['total'],"event": event}
+        return {"endtime":endtime,"count": (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total']),"event": event}
         #return {endtime: res['hits']['total']}
 
     def get_hits_terms(self, rule, starttime, endtime, index, key, qk=None, size=None):
@@ -622,7 +623,33 @@ class ElastAlerter(object):
             return {}
         payload = res['aggregations']
 
-        self.thread_data.num_hits += res['hits']['total']
+        self.thread_data.num_hits += (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
+        return {endtime: payload}
+    
+    def get_adv_query_aggregation(self, rule, starttime, endtime, index, term_size=None):
+        rule_filter = copy.copy(rule['filter'])
+        base_query = self.get_query(
+            rule_filter,
+            starttime,
+            endtime,
+            timestamp_field=rule['timestamp_field'],
+            sort=False,
+            to_ts_func=rule['dt_to_ts'],
+        )
+        request = get_msearch_query(base_query,rule)
+        try:
+            #using backwards compatibile msearch
+            res = self.thread_data.current_es.msearch(body=request)
+            res = res['responses'][0]
+        except ElasticsearchException as e:
+            if len(str(e)) > 1024:
+                e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
+            self.handle_error('Error running query: %s' % (e), {'rule': rule['name']})
+            return None
+        if 'aggregations' not in res:
+            return {}
+        payload = res['aggregations']
+        self.thread_data.num_hits += int(res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
         return {endtime: payload}
 
 
@@ -689,7 +716,7 @@ class ElastAlerter(object):
         elastalert_logger.info("request data is %s" % json.dumps(data))
         # res = requests.post(self.query_endpoint, json=data)
         # return None, None
-
+    
     def remove_duplicate_events(self, data, rule):
         new_events = []
         for event in data:
@@ -747,7 +774,12 @@ class ElastAlerter(object):
         elif isinstance(rule_inst, ErrorRateRule):
             data = self.get_error_rate(rule, start, end)
         elif rule.get('aggregation_query_element'):
-            data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
+            elastalert_logger.info("in agg query element")
+            if isinstance(rule_inst, AdvancedQueryRule):
+                data = self.get_adv_query_aggregation(rule, start, end,index)
+            else:
+                data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
+
         else:
             data = self.get_hits(rule, start, end, index, scroll)
             if data:

@@ -51,6 +51,16 @@ class AlertmanagerAlerter(Alerter):
         self.labels.update(
             alertname=self.alertname,
             elastalert_rule=self.rule.get('name'))
+        if 'json_payload' in self.rule and self.rule['json_payload'] == True:
+            self.labels.update(query_key_fields=self.rule.get('query_key'))
+            if self.rule.get('query_key') in matches[0].keys():
+                self.labels.update(query_key=matches[0][self.rule.get('query_key')])
+            if self.rule.get('alert_field'):
+                if 'value' in matches[0]:
+                    self.labels.update(query_key_fields=matches[0]['key'])
+                    self.labels.update(query_key=matches[0]['value'])
+                else:
+                    self.labels.update(query_key_fields=self.rule.get('alert_field'))
         self.annotations.update({
             self.title_labelname: self.create_title(matches),
             self.body_labelname: self.create_alert_body(matches)})
@@ -58,6 +68,9 @@ class AlertmanagerAlerter(Alerter):
             'annotations': self.annotations,
             'labels': self.labels
         }
+
+        if self.rule.get('timestamp_field') in matches[0]:
+            payload['labels']['alert_match_time']=matches[0][self.rule.get('timestamp_field')]
 
         for host in self.hosts:
             try:

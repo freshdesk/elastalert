@@ -705,8 +705,8 @@ class ElastAlerter(object):
                 }
         try:
             headers = {}
-            if 'X-ENV' in rule:
-                headers['X-ENV'] = rule['X-ENV']
+            if 'X_ENV' in rule:
+                headers['X-ENV'] = rule['X_ENV']
             res = requests.post(self.query_endpoint, json=data, headers=headers)
             res.raise_for_status()
         except requests.exceptions.RequestException as e:

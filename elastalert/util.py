@@ -420,10 +420,10 @@ def build_adapter_conn_config(conf):
     elif 'es_bearer' in conf:
         parsed_conf['es_bearer'] = conf['es_bearer']
 
-    if os.environ.get('X-ENV'):
-        parsed_conf['headers']['X-ENV'] = os.environ.get('X-ENV')
-    elif 'X-ENV' in conf:
-        parsed_conf['headers']['X-ENV'] = os.environ.get('X-ENV')
+    if os.environ.get('X_ENV'):
+        parsed_conf['headers']['X-ENV'] = os.environ.get('X_ENV')
+    elif 'X_ENV' in conf:
+        parsed_conf['headers']['X-ENV'] = os.environ.get('X_ENV')
 
     if 'aws_region' in conf:
         parsed_conf['aws_region'] = conf['aws_region']

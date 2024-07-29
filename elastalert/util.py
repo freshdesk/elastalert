@@ -395,7 +395,7 @@ def build_adapter_conn_config(conf):
     parsed_conf['es_bearer'] = None
     parsed_conf['aws_region'] = None
     parsed_conf['profile'] = None
-    parsed_conf['headers'] = None
+    parsed_conf['headers'] = {}
     parsed_conf['es_host'] = conf['kibana_adapter']
     parsed_conf['es_port'] = conf['kibana_adapter_port']
     parsed_conf['es_url_prefix'] = ''
@@ -419,6 +419,11 @@ def build_adapter_conn_config(conf):
         parsed_conf['es_bearer'] = os.environ.get('ES_BEARER')
     elif 'es_bearer' in conf:
         parsed_conf['es_bearer'] = conf['es_bearer']
+
+    if os.environ.get('X_ENV'):
+        parsed_conf['headers']['X-ENV'] = os.environ.get('X_ENV')
+    elif 'X_ENV' in conf:
+        parsed_conf['headers']['X-ENV'] = os.environ.get('X_ENV')
 
     if 'aws_region' in conf:
         parsed_conf['aws_region'] = conf['aws_region']

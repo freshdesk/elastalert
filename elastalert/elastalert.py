@@ -318,7 +318,7 @@ class ElastAlerter(object):
         query = {'sort': {timestamp_field: {'order': 'asc'}}}
         try:
             res = self.thread_data.current_es.search(index=index, size=1, body=query,
-                                                         _source_includes=[timestamp_field], ignore_unavailable=True)
+                                                     _source_includes=[timestamp_field], ignore_unavailable=True)
         except ElasticsearchException as e:
             self.handle_error("Elasticsearch query error: %s" % (e), {'index': index, 'query': query})
             return '1969-12-30T00:00:00Z'
@@ -841,8 +841,8 @@ class ElastAlerter(object):
             doc_type = 'elastalert_status'
             index = self.writeback_es.resolve_writeback_index(self.writeback_index, doc_type)
             #modded for elasticsearch ver 6 library compatibility
-            res = self.writeback_es.search(index=index, doc_type='elastalert_status',
-                                               size=1, body=query, _source_include=['endtime', 'rule_name'])
+            res = self.writeback_es.search(index=index, size=1, body=query, 
+                                           _source_includes=['endtime', 'rule_name'])
             if res['hits']['hits']:
                 endtime = ts_to_dt(res['hits']['hits'][0]['_source']['endtime'])
 
@@ -1650,7 +1650,7 @@ class ElastAlerter(object):
 
         try:
             index = self.writeback_es.resolve_writeback_index(self.writeback_index, doc_type)
-            res = self.writeback_es.index(index=index,doc_type=doc_type, body=body)
+            res = self.writeback_es.index(index=index, body=body)
             return res
         except ElasticsearchException as e:
             elastalert_logger.exception("Error writing alert info to Elasticsearch: %s" % (e))
@@ -1672,7 +1672,6 @@ class ElastAlerter(object):
         try:
             #modded for elasticsearch ver 6 library compatibility
             res = self.writeback_es.search(index=self.writeback_index,
-                                           doc_type='elastalert',
                                            body=query,
                                            size=1000)
             if res['hits']['hits']:
@@ -1727,7 +1726,6 @@ class ElastAlerter(object):
                 # Delete it from the index
                 try:
                     self.writeback_es.delete(index=self.writeback_index,
-                                             doc_type='elastalert',
                                              id=_id)
                 except ElasticsearchException:  # TODO: Give this a more relevant exception, try:except: is evil.
                     self.handle_error("Failed to delete alert %s at %s" % (_id, alert_time))
@@ -1760,13 +1758,11 @@ class ElastAlerter(object):
         try:
             #modded for elasticsearch ver 6 library compatibility
             res = self.writeback_es.search(index=self.writeback_index,
-                                           doc_type='elastalert',
                                            body=query,
                                            size=self.max_aggregation)
             for match in res['hits']['hits']:
                 matches.append(match['_source'])
                 self.writeback_es.delete(index=self.writeback_index,
-                                         doc_type='elastalert',
                                          id=match['_id'])
         except (KeyError, ElasticsearchException) as e:
             self.handle_error("Error fetching aggregated matches: %s" % (e), {'id': _id})
@@ -1931,8 +1927,8 @@ class ElastAlerter(object):
             doc_type = 'silence'
             index = self.writeback_es.resolve_writeback_index(self.writeback_index, doc_type)
             #modded for elasticsearch ver 6 library compatibility
-            res = self.writeback_es.search(index=index, doc_type='silence',
-                                               size=1, body=query, _source_include=['until', 'exponent'])
+            res = self.writeback_es.search(index=index, size=1, body=query, 
+                                           _source_includes=['until', 'exponent'])
         except ElasticsearchException as e:
             self.handle_error("Error while querying for alert silence status: %s" % (e), {'rule': rule_name})
 

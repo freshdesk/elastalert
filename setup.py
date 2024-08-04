@@ -37,7 +37,7 @@ setup(
         'boto3>=1.20.53',
         'cffi>=1.15.0',
         'croniter>=1.2.0',
-        'elasticsearch==6.3.1',
+        'elasticsearch==7.10.1',
         'envparse>=0.2.0',
         'exotel==0.1.5',
         'Jinja2>=3.1.2',

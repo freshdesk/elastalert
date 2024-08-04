@@ -5,7 +5,7 @@ ADD . /opt/elastalert/
 
 WORKDIR /opt
 
-RUN pip install "setuptools==65.5.0" "elasticsearch==6.3.1"
+RUN pip install "setuptools==65.5.0" "elasticsearch==7.10.1"
 
 WORKDIR "${ELASTALERT_HOME}"
 

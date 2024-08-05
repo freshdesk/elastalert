@@ -533,7 +533,7 @@ class ElastAlerter(object):
         if len(res['hits']['hits']) > 0 :
             event = self.process_hits(rule, res['hits']['hits'])
         else:
-            event= self.process_hits(rule,[{'_source': {'@timestamp': endtime}}])
+            event= self.process_hits(rule,[{'_source': {rule['timestamp_field']: endtime}}])
             
         return {"endtime":endtime,"count": (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total']),"event": event}
         #return {endtime: res['hits']['total']}

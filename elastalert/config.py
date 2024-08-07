@@ -25,7 +25,8 @@ env_settings = {'ES_USE_SSL': 'use_ssl',
                 'ES_PORT': 'es_port',
                 'ES_URL_PREFIX': 'es_url_prefix',
                 'STATSD_INSTANCE_TAG': 'statsd_instance_tag',
-                'STATSD_HOST': 'statsd_host'}
+                'STATSD_HOST': 'statsd_host',
+                'X_ENV':'X_ENV'}
 
 env = Env(ES_USE_SSL=bool)
 
@@ -92,6 +93,8 @@ def load_conf(args, defaults=None, overrides=None):
             conf['old_query_limit'] = datetime.timedelta(**conf['old_query_limit'])
         else:
             conf['old_query_limit'] = datetime.timedelta(weeks=1)
+        if 'query_delay' in conf:
+            conf['query_delay'] = datetime.timedelta(**conf['query_delay'])
     except (KeyError, TypeError) as e:
         raise EAException('Invalid time format used: %s' % e)
 

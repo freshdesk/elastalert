@@ -93,6 +93,8 @@ class RulesLoader(object):
         'metric_aggregation': ruletypes.MetricAggregationRule,
         'percentage_match': ruletypes.PercentageMatchRule,
         'spike_aggregation': ruletypes.SpikeMetricAggregationRule,
+        'error_rate': ruletypes.ErrorRateRule,  #Adding Error Rate Rule type
+        'advanced_query': ruletypes.AdvancedQueryRule
     }
 
     # Used to map names of alerts to their classes
@@ -172,7 +174,7 @@ class RulesLoader(object):
                     continue
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
-            except EAException as e:
+            except EAException as e: 
                 raise EAException('Error loading file %s: %s' % (rule_file, e))
 
             rules.append(rule)
@@ -251,6 +253,15 @@ class RulesLoader(object):
 
         while True:
             loaded = self.get_yaml(current_path)
+
+            #Setting default operator for filters as AND as in elastalert-0.1.35
+            if 'filter' in loaded:
+                for filter in loaded['filter']:
+                    if 'query' in filter and filter['query'] != None:
+                        if 'query_string' in filter['query'] and filter['query']['query_string']!= None: 
+                            filter['query']['query_string']['default_operator'] = "AND"
+                    else:
+                        elastalert_logger.info("Query is None in file: %s",filename)
 
             # Special case for merging filters - if both files specify a filter merge (AND) them
             if 'filter' in rule and 'filter' in loaded:
@@ -392,6 +403,11 @@ class RulesLoader(object):
 
         if 'include' in rule and type(rule['include']) != list:
             raise EAException('include option must be a list')
+
+        #setting default config fields for error_rate
+        if (rule['type'] == 'error_rate'):
+            rule.setdefault('error_condition','exception.type:*')
+            rule.setdefault('unique_column','traceID')
 
         raw_query_key = rule.get('query_key')
         if isinstance(raw_query_key, list):

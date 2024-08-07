@@ -36,7 +36,7 @@ class PrometheusWrapper:
     def metrics_writeback(self, doc_type, body, rule=None, match_body=None):
         """ Update various prometheus metrics accoording to the doc_type """
 
-        res = self.writeback(doc_type, body, rule, match_body)
+        res = self.writeback(doc_type, body)
         try:
             if doc_type == 'elastalert_status':
                 self.prom_hits.labels(body['rule_name']).inc(int(body['hits']))
@@ -48,6 +48,9 @@ class PrometheusWrapper:
                 else:
                     self.prom_alerts_not_sent.labels(body['rule_name']).inc()
             elif doc_type == 'elastalert_error':
+                print("coming_here")
+                print(body)
+                print("pt 2")
                 self.prom_errors.inc()
             elif doc_type == 'silence':
                 self.prom_alerts_silenced.labels(body['rule_name']).inc()

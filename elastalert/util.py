@@ -6,6 +6,8 @@ import os
 import re
 import sys
 import time
+import types
+import json
 
 import dateutil.parser
 import pytz
@@ -18,6 +20,21 @@ from elasticsearch.exceptions import TransportError
 logging.basicConfig()
 logging.captureWarnings(True)
 elastalert_logger = logging.getLogger('elastalert')
+
+#backwards compatibility with es6 msearch
+def get_msearch_query(query, rule):
+    search_arr = []
+    search_arr.append({'index': [rule['index']]})
+    if rule.get('use_count_query'):
+        query['size'] = 1
+    if rule.get('include'):
+        query['_source'] = {}
+        query['_source']['includes'] = rule['include']
+    search_arr.append(query)
+    request = ''
+    for each in search_arr:
+        request += '%s \n' %json.dumps(each)
+    return request
 
 
 def get_module(module_name):
@@ -277,7 +294,10 @@ def unixms_to_dt(ts):
 
 
 def unix_to_dt(ts):
-    dt = datetime.datetime.utcfromtimestamp(float(ts))
+    if(type(ts) == types.UnicodeType):
+        dt = datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S.%f')
+    else: #if timestamp is in float format
+        dt = datetime.datetime.utcfromtimestamp(float(ts))
     dt = dt.replace(tzinfo=dateutil.tz.tzutc())
     return dt
 
@@ -342,6 +362,99 @@ def elasticsearch_client(conf):
         es_conn_conf['headers'] = {"Authorization": "ApiKey " + es_conn_conf['es_api_key']}
 
     return ElasticSearchClient(es_conn_conf)
+
+
+#modded version of elasticsearch_client that suits haystack's needs
+def kibana_adapter_client(conf):
+    """ returns an Elasticsearch instance configured using an es_conn_config """
+    es_conn_conf = build_adapter_conn_config(conf)
+    auth = Auth()
+    es_conn_conf['http_auth'] = auth(host=es_conn_conf['es_host'],
+                                     username=es_conn_conf['es_username'],
+                                     password=es_conn_conf['es_password'],
+                                     aws_region=es_conn_conf['aws_region'],
+                                     profile_name=es_conn_conf['profile'])
+
+    return ElasticSearchClient(es_conn_conf)
+
+def build_adapter_conn_config(conf):
+    """ Given a conf dictionary w/ raw config properties 'use_ssl', 'es_host', 'es_port'
+    'es_username' and 'es_password', this will return a new dictionary
+    with properly initialized values for 'es_host', 'es_port', 'use_ssl' and 'http_auth' which
+    will be a basicauth username:password formatted string """
+    parsed_conf = {}
+    parsed_conf['use_ssl'] = os.environ.get('ES_USE_SSL', False)
+    parsed_conf['verify_certs'] = True
+    parsed_conf['ca_certs'] = None
+    parsed_conf['client_cert'] = None
+    parsed_conf['client_key'] = None
+    parsed_conf['http_auth'] = None
+    parsed_conf['es_username'] = None
+    parsed_conf['es_password'] = None
+    parsed_conf['es_api_key'] = None
+    parsed_conf['es_bearer'] = None
+    parsed_conf['aws_region'] = None
+    parsed_conf['profile'] = None
+    parsed_conf['headers'] = {}
+    parsed_conf['es_host'] = conf['kibana_adapter']
+    parsed_conf['es_port'] = conf['kibana_adapter_port']
+    parsed_conf['es_url_prefix'] = ''
+    parsed_conf['es_conn_timeout'] = conf.get('es_conn_timeout', 20)
+    parsed_conf['send_get_body_as'] = conf.get('es_send_get_body_as', 'GET')
+    parsed_conf['ssl_show_warn'] = conf.get('ssl_show_warn', True)
+
+    if os.environ.get('ES_USERNAME'):
+        parsed_conf['es_username'] = os.environ.get('ES_USERNAME')
+        parsed_conf['es_password'] = os.environ.get('ES_PASSWORD')
+    elif 'es_username' in conf:
+        parsed_conf['es_username'] = conf['es_username']
+        parsed_conf['es_password'] = conf['es_password']
+
+    if os.environ.get('ES_API_KEY'):
+        parsed_conf['es_api_key'] = os.environ.get('ES_API_KEY')
+    elif 'es_api_key' in conf:
+        parsed_conf['es_api_key'] = conf['es_api_key']
+
+    if os.environ.get('ES_BEARER'):
+        parsed_conf['es_bearer'] = os.environ.get('ES_BEARER')
+    elif 'es_bearer' in conf:
+        parsed_conf['es_bearer'] = conf['es_bearer']
+
+    if os.environ.get('X_ENV'):
+        parsed_conf['headers']['X-ENV'] = os.environ.get('X_ENV')
+    elif 'X_ENV' in conf:
+        parsed_conf['headers']['X-ENV'] = os.environ.get('X_ENV')
+
+    if 'aws_region' in conf:
+        parsed_conf['aws_region'] = conf['aws_region']
+
+    if 'profile' in conf:
+        parsed_conf['profile'] = conf['profile']
+
+    if 'use_ssl' in conf:
+        parsed_conf['use_ssl'] = conf['use_ssl']
+
+    if 'verify_certs' in conf:
+        parsed_conf['verify_certs'] = conf['verify_certs']
+
+    if 'ca_certs' in conf:
+        parsed_conf['ca_certs'] = conf['ca_certs']
+
+    if 'client_cert' in conf:
+        parsed_conf['client_cert'] = conf['client_cert']
+
+    if 'client_key' in conf:
+        parsed_conf['client_key'] = conf['client_key']
+
+    if 'es_url_prefix' in conf:
+        parsed_conf['es_url_prefix'] = conf['es_url_prefix']
+
+    if 'kibana_adapter_url_prefix' in conf:
+        parsed_conf['es_url_prefix'] = conf['kibana_adapter_url_prefix']
+  
+
+    return parsed_conf
+
 
 
 def build_es_conn_config(conf):

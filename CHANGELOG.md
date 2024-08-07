@@ -1,3 +1,41 @@
+# fw_2.9.0.8
+- Percentage match rule type modified to work with haystack usecase [HAYS-4850]
+
+# fw_2.9.0.5
+- New Term Rule type modified to work with haystack usecase
+- Updated terms aggregation query to get existing terms
+- Updated Query used to get current terms to make use of terms aggregation instead of a search query
+- Added ability to refresh existing terms in a configureable refresh interval
+- Added Upper and Lower bounds for configureable query parameters like window_size, step_size and terms_size 
+- Modified Default values for new-term rule configurations
+
+# 2.9.0.1 FW updates
+- Downgraded elasticsearch library from version 8 to version 6 for the engine support the existing es clusters of haystack.
+- Downgraded various other libraries for the same.
+- es scrolls disabled as per requirement
+- replaced search queries with msearch for all es querying
+
+## Breaking Changes
+- Downgraded elasticsearch library from version 8 to version 6 for the engine support the existing es clusters of haystack.
+- Downgraded various other libraries for the same.
+- es scrolls disabled as per requirement
+- replaced search queries with msearch for all es querying
+
+## New Features
+- [Alertmanager] Added tenant specific config to alertmanager
+- [Prometheus] Added tenant config and modified prometheus route & port as per haystack requirements
+- [Haystack] Added Kibana adapter support for querying from router 
+- [Haystack] Added url_prefix for kibana adapter
+- [Haystack] Term-query optimzations
+- [Engine changes] Common index can be configured directly in config.yaml
+- [Trace Alerts] Added Error Rate rule that hits router aggregagte endpoint 
+- [Trace Alerts] Error rate rule enhancements
+	- error_calculation_method config for users to decide between two different error_rate calculation methods. 
+	- Default values for unique_column and error_condition
+	- Added Test cases for Error Rate Alert type
+- [Dockerfile] Distroless Docker setup for python 3 - elastalert
+- [Dockerfile] Docker optimization to fix create_index not running bug
+
 # 2.TBD.TBD
 
 ## Breaking changes

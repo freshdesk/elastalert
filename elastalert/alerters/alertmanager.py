@@ -30,7 +30,7 @@ class AlertmanagerAlerter(Alerter):
         self.timeout = self.rule.get('alertmanager_timeout', 10)
         self.alertmanager_basic_auth_login = self.rule.get('alertmanager_basic_auth_login', None)
         self.alertmanager_basic_auth_password = self.rule.get('alertmanager_basic_auth_password', None)
-
+        self.tenant = self.rule.get('tenant', "haystack")
 
     @staticmethod
     def _json_or_string(obj):
@@ -41,6 +41,7 @@ class AlertmanagerAlerter(Alerter):
 
     def alert(self, matches):
         headers = {'content-type': 'application/json'}
+        headers.update({"X-Scope-OrgID": self.tenant})
         proxies = {'https': self.proxies} if self.proxies else None
         auth = HTTPBasicAuth(self.alertmanager_basic_auth_login, self.alertmanager_basic_auth_password) if self.alertmanager_basic_auth_login else None
 
@@ -50,6 +51,16 @@ class AlertmanagerAlerter(Alerter):
         self.labels.update(
             alertname=self.alertname,
             elastalert_rule=self.rule.get('name'))
+        if 'json_payload' in self.rule and self.rule['json_payload'] == True:
+            self.labels.update(query_key_fields=self.rule.get('query_key'))
+            if self.rule.get('query_key') in matches[0].keys():
+                self.labels.update(query_key=matches[0][self.rule.get('query_key')])
+            if self.rule.get('alert_field'):
+                if 'value' in matches[0]:
+                    self.labels.update(query_key_fields=matches[0]['key'])
+                    self.labels.update(query_key=matches[0]['value'])
+                else:
+                    self.labels.update(query_key_fields=self.rule.get('alert_field'))
         self.annotations.update({
             self.title_labelname: self.create_title(matches),
             self.body_labelname: self.create_alert_body(matches)})
@@ -58,9 +69,12 @@ class AlertmanagerAlerter(Alerter):
             'labels': self.labels
         }
 
+        if self.rule.get('timestamp_field') in matches[0]:
+            payload['labels']['alert_match_time']=matches[0][self.rule.get('timestamp_field')]
+
         for host in self.hosts:
             try:
-                url = '{}/api/{}/alerts'.format(host, self.api_version)
+                url = host
 
                 if self.ca_certs:
                     verify = self.ca_certs

@@ -4,6 +4,8 @@ import datetime
 
 from unittest import mock
 import pytest
+from datetime import datetime as dt
+from tests.conftest import ea 
 
 from elastalert.ruletypes import AnyRule
 from elastalert.ruletypes import BaseAggregationRule
@@ -15,6 +17,7 @@ from elastalert.ruletypes import EventWindow
 from elastalert.ruletypes import FlatlineRule
 from elastalert.ruletypes import FrequencyRule
 from elastalert.ruletypes import MetricAggregationRule
+from elastalert.ruletypes import ErrorRateRule
 from elastalert.ruletypes import NewTermsRule
 from elastalert.ruletypes import PercentageMatchRule
 from elastalert.ruletypes import RuleType
@@ -112,26 +115,26 @@ def test_freq_count():
              'use_count_query': True}
     # Normal match
     rule = FrequencyRule(rules)
-    rule.add_count_data({ts_to_dt('2014-10-10T00:00:00'): 75})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:00:00')}],'endtime':ts_to_dt('2014-10-10T00:00:00'),'count': 75})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:15:00'): 10})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:15:00')}],'endtime':ts_to_dt('2014-10-10T00:15:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:25:00'): 10})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:25:00')}],'endtime':ts_to_dt('2014-10-10T00:25:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:45:00'): 6})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:45:00')}],'endtime':ts_to_dt('2014-10-10T00:45:00'),'count': 6})
     assert len(rule.matches) == 1
 
     # First data goes out of timeframe first
     rule = FrequencyRule(rules)
-    rule.add_count_data({ts_to_dt('2014-10-10T00:00:00'): 75})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:00:00')}],'endtime':ts_to_dt('2014-10-10T00:00:00'),'count': 75})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:45:00'): 10})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:45:00')}],'endtime':ts_to_dt('2014-10-10T00:45:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T00:55:00'): 10})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T00:55:00')}],'endtime':ts_to_dt('2014-10-10T00:55:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T01:05:00'): 6})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T01:05:00')}],'endtime':ts_to_dt('2014-10-10T01:05:00'),'count': 6})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-10T01:00:00'): 75})
+    rule.add_count_data({'event':[{'@timestamp': ts_to_dt('2014-10-10T01:00:00')}],'endtime':ts_to_dt('2014-10-10T01:00:00'),'count': 75})
     assert len(rule.matches) == 1
 
     # except EAException
@@ -139,7 +142,7 @@ def test_freq_count():
         rule = FrequencyRule(rules)
         rule.add_count_data('aaaa')
     except EAException as ea:
-        assert 'add_count_data can only accept one count at a time' in str(ea)
+        assert 'add_count_data should have endtime and count' in str(ea)
 
 
 def test_freq_out_of_order():
@@ -223,20 +226,20 @@ def test_spike_count():
     rule = SpikeRule(rules)
 
     # Double rate of events at 20 seconds
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:00'): 10})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:10'): 10})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:10'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:20'): 20})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:20'),'count': 20})
     assert len(rule.matches) == 1
 
     # Downward spike
     rule = SpikeRule(rules)
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:00'): 10})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:00'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:10'): 10})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:10'),'count': 10})
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-09-26T00:00:20'): 0})
+    rule.add_count_data({'endtime':ts_to_dt('2014-09-26T00:00:20'),'count': 0})
     assert len(rule.matches) == 1
 
 
@@ -564,14 +567,29 @@ def test_change():
 def test_new_term(version):
     rules = {'fields': ['a', 'b'],
              'timestamp_field': '@timestamp',
-             'es_host': 'example.com', 'es_port': 10, 'index': 'logstash',
+             'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-    mock_res = {'aggregations': {'filtered': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-                                                                     {'key': 'key2', 'doc_count': 5}]}}}}
+    mock_res = {
+        'responses': [{
+            'aggregations': {
+                'values': {
+                    'buckets': [{
+                            'key': 'key1',
+                            'doc_count': 1
+                        },
+                        {
+                            'key': 'key2',
+                            'doc_count': 5
+                        }
+                    ]
+                }
+            }
+        }]
+    }
 
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = version
         call_args = []
 
@@ -583,8 +601,7 @@ def test_new_term(version):
         mock_es.return_value.search.side_effect = record_args
         rule = NewTermsRule(rules)
 
-    # 30 day default range, 1 day default step, times 2 fields
-    assert rule.es.search.call_count == 60
+    
 
     # Assert that all calls have the proper ordering of time ranges
     old_ts = '2010-01-01T00:00:00Z'
@@ -601,186 +618,428 @@ def test_new_term(version):
         old_ts = gte
 
     # Key1 and key2 shouldn't cause a match
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2'}])
+    data = {
+        ts_now() : {
+            "a": (["key1"],[1]),
+            "b": (["key2"], [1])
+        }
+    }
+    rule.add_terms_data(data)
+
+
+    # rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2'}])
+
     assert rule.matches == []
 
     # Neither will missing values
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
+    data = {
+        ts_now() : {
+            "a": (["key2"],[1]),
+            "b": ([],[])
+        }
+    }
+    rule.add_terms_data(data)
+    # rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
     assert rule.matches == []
 
     # Key3 causes an alert for field b
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
+    data = {
+        ts_now() : {
+            "a": (["key2"],[1]),
+            "b": (["key3"],[1])
+        }
+    }
+    rule.add_terms_data(data)
+
+    #rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
     assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == 'b'
-    assert rule.matches[0]['b'] == 'key3'
+    assert rule.matches[0]['field'] == 'b'
+    assert rule.matches[0]['new_value'] == 'key3'
     rule.matches = []
 
     # Key3 doesn't cause another alert for field b
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
+    data = {
+        ts_now() : {
+            "a": (["key2"],[1]),
+            "b": (["key3"],[1])
+        }
+    }
+    rule.add_terms_data(data)
+    # rule.add_data([{'@timestamp': ts_now(), 'a': 'key2', 'b': 'key3'}])
     assert rule.matches == []
 
-    # Missing_field
-    rules['alert_on_missing_field'] = True
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
-        mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
-        mock_es.return_value.info.return_value = version
-        rule = NewTermsRule(rules)
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
-    assert len(rule.matches) == 1
-    assert rule.matches[0]['missing_field'] == 'b'
+    ## Missing field -  wont work as we use terms aggregation
+    # rules['alert_on_missing_field'] = True
+    # with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+    #     mock_es.return_value = mock.Mock()
+    #     mock_es.return_value.msearch.return_value = mock_res
+    #     mock_es.return_value.info.return_value = version
+    #     rule = NewTermsRule(rules)
+    # data = {
+    #     ts_now() : {
+    #         "a": ["key2"],
+    #         "b": []
+    #     }
+    # }
+    # rule.add_terms_data(data)
+    # #rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
+    # assert len(rule.matches) == 1
+    # assert rule.matches[0]['missing_field'] == 'b'
 
 
 def test_new_term_nested_field():
 
     rules = {'fields': ['a', 'b.c'],
              'timestamp_field': '@timestamp',
-             'es_host': 'example.com', 'es_port': 10, 'index': 'logstash',
+             'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-    mock_res = {'aggregations': {'filtered': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-                                                                     {'key': 'key2', 'doc_count': 5}]}}}}
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
+                                                                     {'key': 'key2', 'doc_count': 5}]}}}] }
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
-        assert rule.es.search.call_count == 60
+        
 
     # Key3 causes an alert for nested field b.c
-    rule.add_data([{'@timestamp': ts_now(), 'b': {'c': 'key3'}}])
+    data = {
+        ts_now() : {
+            "a": ([],[]),
+            "b.c": (["key3"],[1])
+        }
+    }
+    rule.add_terms_data(data)
+
+    # rule.add_data([{'@timestamp': ts_now(), 'b': {'c': 'key3'}}])
     assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == 'b.c'
-    assert rule.matches[0]['b']['c'] == 'key3'
+    assert rule.matches[0]['field'] == 'b.c'
+    assert rule.matches[0]['new_value'] == 'key3'
     rule.matches = []
 
+def test_new_term_window_updates():
 
-def test_new_term_with_terms():
     rules = {'fields': ['a'],
              'timestamp_field': '@timestamp',
-             'es_host': 'example.com', 'es_port': 10, 'index': 'logstash', 'query_key': 'a',
-             'window_step_size': {'days': 2},
-             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
-    mock_res = {'aggregations': {'filtered': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
-                                                                     {'key': 'key2', 'doc_count': 5}]}}}}
+             'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
+             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'hours': 3  }, 'threshold': 20, 'threshold_window_size': {'hours': 1}  }
+    mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 5},
+                                                                     {'key': 'key2', 'doc_count': 5}]}}}] }
 
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    #empty_test_data
+    time_pointer = ts_now()
+
+
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
+    
+    # key 2 keeps occuring every 1 hour
+    for i in range(4):
+        time_pointer += datetime.timedelta(hours=1)
+        data = { time_pointer : { "a": (['key2'],[5]) } }   
+        rule.add_terms_data(data)
 
-        # Only 15 queries because of custom step size
-        assert rule.es.search.call_count == 15
-
-    # Key1 and key2 shouldn't cause a match
-    terms = {ts_now(): [{'key': 'key1', 'doc_count': 1},
-                        {'key': 'key2', 'doc_count': 1}]}
-    rule.add_terms_data(terms)
-    assert rule.matches == []
-
-    # Key3 causes an alert for field a
-    terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
-    rule.add_terms_data(terms)
+    # 4 hours later, if key1 comes again, match should come
+    data = { time_pointer : { "a": (['key1'],[20]) } }   
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == 'a'
-    assert rule.matches[0]['a'] == 'key3'
-    rule.matches = []
 
-    # Key3 doesn't cause another alert
-    terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
-    rule.add_terms_data(terms)
-    assert rule.matches == []
+    # if key1 comes again in the next 2 hour 59 minutes, match woundnt come, as it is now in existing terms
+    time_pointer += datetime.timedelta(hours=2, minutes=59)
+    data = { time_pointer : { "a": (['key1'],[20]) } }   
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 1
 
+    # 3 hours later, if same key comes. it will be considered new term, but since threshold isnt reached no matches
+    time_pointer += datetime.timedelta(hours=3, minutes=1)
+    data = { time_pointer : { "a": (['key1'],[1]) } }   
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 1
+
+
+    #in next 30 mins, threshold is reached and match is found
+    time_pointer += datetime.timedelta(minutes= 30)
+    data = { time_pointer : { "a": (['key1'],[19]) } }   
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 2
+
+    #another new term causing match
+    time_pointer += datetime.timedelta(minutes= 30)
+    data = { time_pointer : { "a": (['key2'],[21]) } }   
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 3
+
+    time_pointer += datetime.timedelta(minutes= 40)
+    data = { time_pointer : { "a": (['key2'],[21]) } }   
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 3
 
 def test_new_term_with_composite_fields():
     rules = {'fields': [['a', 'b', 'c'], ['d', 'e.f']],
              'timestamp_field': '@timestamp',
-             'es_host': 'example.com', 'es_port': 10, 'index': 'logstash',
+             'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
 
     mock_res = {
-        'aggregations': {
-            'filtered': {
+        'responses': [{
+            'aggregations': {
                 'values': {
-                    'buckets': [
-                        {
-                            'key': 'key1',
-                            'doc_count': 5,
-                            'values': {
-                                'buckets': [
-                                    {
-                                        'key': 'key2',
-                                        'doc_count': 5,
-                                        'values': {
-                                            'buckets': [
-                                                {
-                                                    'key': 'key3',
-                                                    'doc_count': 3,
-                                                },
-                                                {
-                                                    'key': 'key4',
-                                                    'doc_count': 2,
-                                                },
-                                            ]
-                                        }
-                                    }
-                                ]
-                            }
+                    'buckets': [{
+                        'key': 'key1',
+                        'doc_count': 5,
+                        'values': {
+                            'buckets': [{
+                                'key': 'key2',
+                                'doc_count': 5,
+                                'values': {
+                                    'buckets': [{
+                                            'key': 'key3',
+                                            'doc_count': 3,
+                                        },
+                                        {
+                                            'key': 'key4',
+                                            'doc_count': 2,
+                                        },
+                                    ]
+                                }
+                            }]
                         }
-                    ]
+                    }]
+
                 }
             }
-        }
+        }]
     }
 
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
+        mock_es.return_value.msearch.return_value = mock_res
         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
         rule = NewTermsRule(rules)
 
-        assert rule.es.search.call_count == 60
-
     # key3 already exists, and thus shouldn't cause a match
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key3'}])
+    data = {
+        ts_now() : {
+            tuple(['a','b','c']):  ([tuple(["key1","key2","key3"])],[1]),
+            tuple(['d','e.f']):  ([],[])
+        }
+    }
+    rule.add_terms_data(data)
     assert rule.matches == []
 
+
     # key5 causes an alert for composite field [a, b, c]
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key5'}])
+    data = {
+        ts_now() : {
+            ('a', 'b', 'c'):  ([("key1","key2","key5")],[1]),
+            ('d','e.f'):  ([],[])
+        }
+    }
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == ('a', 'b', 'c')
-    assert rule.matches[0]['a'] == 'key1'
-    assert rule.matches[0]['b'] == 'key2'
-    assert rule.matches[0]['c'] == 'key5'
+    assert rule.matches[0]['field'] == ('a', 'b', 'c')
+    assert rule.matches[0]['new_value'] == ("key1","key2","key5")
     rule.matches = []
 
-    # New values in other fields that are not part of the composite key should not cause an alert
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key1', 'b': 'key2', 'c': 'key4', 'd': 'unrelated_value'}])
+    # testing same with Threshold Window and Threshold
+
+    rules['threshold'] = 10
+    rules['threshold_window_size'] = {'hours': 6} 
+    
+
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+        mock_es.return_value = mock.Mock()
+        mock_es.return_value.msearch.return_value = mock_res
+        mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+        rule = NewTermsRule(rules)
+
+    time_pointer = ts_now()
+
+    # will not cause match
+    data = {
+        time_pointer : {
+            ('a', 'b', 'c'):  ([("key1","key2","key4")],[1]),
+            ('d','e.f'):  ([],[])
+        }
+    }
+    rule.add_terms_data(data)
     assert len(rule.matches) == 0
     rule.matches = []
 
-    # Verify nested fields work properly
-    # Key6 causes an alert for nested field e.f
-    rule.add_data([{'@timestamp': ts_now(), 'd': 'key4', 'e': {'f': 'key6'}}])
+    # will not cause match, as threshold wont be reached
+    time_pointer += datetime.timedelta(hours = 1)
+    data = {
+        time_pointer : {
+            ('a', 'b', 'c'):  ([("key1","key2","key5")],[9]),
+            ('d','e.f'):  ([],[])
+        }
+    }
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 0
+    
+
+    # will cause match, as threshold will be reached
+    data = {
+        time_pointer : {
+            ('a', 'b', 'c'):  ([("key1","key2","key5")],[1]),
+            ('d','e.f'):  ([],[])
+        }
+    }
+    rule.add_terms_data(data)
     assert len(rule.matches) == 1
-    assert rule.matches[0]['new_field'] == ('d', 'e.f')
-    assert rule.matches[0]['d'] == 'key4'
-    assert rule.matches[0]['e']['f'] == 'key6'
+    assert rule.matches[0]['field'] == ('a', 'b', 'c')
+    assert rule.matches[0]['new_value'] == ("key1","key2","key5")
     rule.matches = []
 
-    # Missing_fields
-    rules['alert_on_missing_field'] = True
-    with mock.patch('elastalert.ruletypes.elasticsearch_client') as mock_es:
+    #test composite flatten buckets
+    keys,counts = rule.flatten_aggregation_hierarchy(mock_res['responses'][0]['aggregations']['values']['buckets'])
+    assert keys == [('key1', 'key2', 'key3'), ('key1', 'key2', 'key4')]
+    assert counts == [3, 2]
+
+def test_new_term_threshold():
+    rules = {'fields': ['a'],
+             'timestamp_field': '@timestamp',
+             'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
+             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'days': 10  },
+             'window_step_size' : {'hours': 1  }, 'terms_size': 10000, 'threshold': 0 }
+      
+    mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1}]}}}] }
+    
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
         mock_es.return_value = mock.Mock()
-        mock_es.return_value.search.return_value = mock_res
-        mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+        mock_es.return_value.msearch.return_value = mock_res
         rule = NewTermsRule(rules)
-    rule.add_data([{'@timestamp': ts_now(), 'a': 'key2'}])
-    assert len(rule.matches) == 2
-    # This means that any one of the three n composite fields were not present
-    assert rule.matches[0]['missing_field'] == ('a', 'b', 'c')
-    assert rule.matches[1]['missing_field'] == ('d', 'e.f')
+
+
+    # introducting new value for field a, should trigger as threshold is 0
+    data = {
+        ts_now() : {
+            ('a'):  (["key2"],[1])
+        }
+    }
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 1
+
+    # changing threshold to 10 and threhold_duration to 2 hours
+    rules['threshold'] = 10
+    rules['threshold_window_size'] = {"hours" : 2}
+
+    # used for incrementing time
+    time_pointer = ts_now()
+
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+        mock_es.return_value = mock.Mock()
+        mock_es.return_value.msearch.return_value = mock_res
+        rule = NewTermsRule(rules)
+
+    # new value for field 'a' with count 8, shouldnt create a match
+    data = {
+        time_pointer : {
+            ('a'):  (["key2"],[8])
+        }
+    }
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 0
+
+
+    # new value for field 'a' with count 8 after 3 hours, shouldnt create a match
+
+    time_pointer += datetime.timedelta(**{"hours":3})
+
+    data = {
+         time_pointer : {
+            ('a'):  (["key2"],[8])
+        }
+    }
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 0
+
+    # new value for field a with count 2 after 10 minutes
+    # should create a match as the total count stored for the last 2 hours would be 10
+    time_pointer += datetime.timedelta(**{"minutes":10})
+
+    data = {
+         time_pointer : {
+            ('a'):  (["key1","key2"],[1,2])
+        }
+    }
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 1
+
+    # no new matches should be added, when the rule crosses the threshold the second time
+
+    time_pointer += datetime.timedelta(**{"minutes":10})
+
+    data = {
+         time_pointer : {
+            ('a'):  (["key2"],[20])
+        }
+    }
+    rule.add_terms_data(data)
+    assert len(rule.matches) == 1
+
+def test_new_term_bounds():
+    rules = {'fields': ['a'],
+             'timestamp_field': '@timestamp',
+             'kibana_adapter': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash',
+             'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts, 'terms_window_size': {'days': 10  },
+             'window_step_size' : {'hours': 1  }, 'terms_size': 10000, 'threshold_window_size': {"days": 3} }
+      
+    mock_res ={'responses' : [{'aggregations': {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
+                                                                     {'key': 'key2', 'doc_count': 5}]}}}] }
+    
+    with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+        mock_es.return_value = mock.Mock()
+        mock_es.return_value.msearch.return_value = mock_res
+        rule = NewTermsRule(rules)
+
+    assert rule.window_size == datetime.timedelta(**{'days': 7})
+    assert rule.threshold_window_size == datetime.timedelta(**{'days': 2})
+    assert rule.terms_size == 1000
+
+
+## New implementation will never use with_terms 
+# def test_new_term_with_terms():
+#     rules = {'fields': ['a'],
+#              'timestamp_field': '@timestamp',
+#              'kibana_adapter_host': 'example.com', 'kibana_adapter_port': 10, 'index': 'logstash', 'query_key': 'a',
+#              'window_step_size': {'days': 2},
+#              'ts_to_dt': ts_to_dt, 'dt_to_ts': dt_to_ts}
+#     mock_res = {'responses' : [{'aggregations':  {'values': {'buckets': [{'key': 'key1', 'doc_count': 1},
+#                                                                      {'key': 'key2', 'doc_count': 5}]}}}]}
+
+#     with mock.patch('elastalert.ruletypes.kibana_adapter_client') as mock_es:
+#         mock_es.return_value = mock.Mock()
+#         mock_es.return_value.msearch.return_value = mock_res
+#         mock_es.return_value.info.return_value = {'version': {'number': '2.x.x'}}
+#         rule = NewTermsRule(rules)
+
+#         # Only 4 queries because of custom step size
+#         assert rule.es.msearch.call_count == 4
+
+#     # Key1 and key2 shouldn't cause a match
+#     terms = {ts_now(): [{'key': 'key1', 'doc_count': 1},
+#                         {'key': 'key2', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert rule.matches == []
+
+#     # Key3 causes an alert for field a
+#     terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert len(rule.matches) == 1
+#     assert rule.matches[0]['new_field'] == 'a'
+#     assert rule.matches[0]['a'] == 'key3'
+#     rule.matches = []
+
+#     # Key3 doesn't cause another alert
+#     terms = {ts_now(): [{'key': 'key3', 'doc_count': 1}]}
+#     rule.add_terms_data(terms)
+#     assert rule.matches == []
+
 
 
 def test_flatline():
@@ -847,13 +1106,13 @@ def test_flatline_count():
              'threshold': 1,
              'timestamp_field': '@timestamp'}
     rule = FlatlineRule(rules)
-    rule.add_count_data({ts_to_dt('2014-10-11T00:00:00'): 1})
+    rule.add_count_data({'endtime':ts_to_dt('2014-10-11T00:00:00'),'count': 1})
     rule.garbage_collect(ts_to_dt('2014-10-11T00:00:10'))
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-11T00:00:15'): 0})
+    rule.add_count_data({'endtime':ts_to_dt('2014-10-11T00:00:15'),'count': 0})
     rule.garbage_collect(ts_to_dt('2014-10-11T00:00:20'))
     assert len(rule.matches) == 0
-    rule.add_count_data({ts_to_dt('2014-10-11T00:00:35'): 0})
+    rule.add_count_data({'endtime':ts_to_dt('2014-10-11T00:00:35'),'count': 0})
     assert len(rule.matches) == 1
 
 
@@ -1204,6 +1463,73 @@ def test_metric_aggregation():
     rule.check_matches(datetime.datetime.now(), 'qk_val', {'metric_cpu_pct_avg': {'value': 0.95}})
     assert rule.matches[0]['subdict1']['subdict2']['subdict3'] == 'qk_val'
 
+def test_percentile_metric_aggregation():
+    rules = {'buffer_time': datetime.timedelta(minutes=5),
+             'timestamp_field': '@timestamp',
+             'metric_agg_type': 'percentiles',
+             'percentile_range': 95,
+             'metric_agg_key': 'cpu_pct'}
+
+    # Check threshold logic
+    with pytest.raises(EAException):
+        rule = MetricAggregationRule(rules)
+
+    rules['min_threshold'] = 0.1
+    rules['max_threshold'] = 0.8
+
+    rule = MetricAggregationRule(rules)
+    assert rule.rules['aggregation_query_element'] == {'metric_cpu_pct_percentiles': {'percentiles': {'field': 'cpu_pct', 'percents': [95],'keyed': False}}}
+
+    assert rule.crossed_thresholds(None) is False
+    assert rule.crossed_thresholds(0.09) is True
+    assert rule.crossed_thresholds(0.10) is False
+    assert rule.crossed_thresholds(0.79) is False
+    assert rule.crossed_thresholds(0.81) is True
+
+    rule.check_matches(datetime.datetime.now(), None, {"doc_count":258757,"key":"appmailer","metric_cpu_pct_percentiles":{"values":[{"key":95,"value":None}]}})
+    rule.check_matches(datetime.datetime.now(), None, {"doc_count":258757,"key":"appmailer","metric_cpu_pct_percentiles":{"values":[{"key":95,"value":0.5}]}})
+    assert len(rule.matches) == 0
+
+    rule.check_matches(datetime.datetime.now(), None, {"doc_count":258757,"key":"appmailer","metric_cpu_pct_percentiles":{"values":[{"key":95,"value":0.05}]}})
+    rule.check_matches(datetime.datetime.now(), None, {"doc_count":258757,"key":"appmailer","metric_cpu_pct_percentiles":{"values":[{"key":95,"value":0.95}]}})
+    assert len(rule.matches) == 2
+
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), None, {"doc_count":258757,"key":"appmailer","metric_cpu_pct_percentiles":{"values":[{"key":95,"value":0.966666667}]}})
+    assert '0.966666667' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['metric_cpu_pct_percentiles'] == 0.966666667
+    assert rule.matches[0]['metric_agg_value'] == 0.966666667
+    assert 'metric_cpu_pct_avg_formatted' not in rule.matches[0]
+    assert 'metric_agg_value_formatted' not in rule.matches[0]
+
+    rules['metric_format_string'] = '{:.2%}'
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), None, {"doc_count":258757,"key":"appmailer","metric_cpu_pct_percentiles":{"values":[{"key":95,"value":0.966666667}]}})
+    assert '96.67%' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['metric_cpu_pct_percentiles'] == 0.966666667
+    assert rule.matches[0]['metric_agg_value'] == 0.966666667
+    assert rule.matches[0]['metric_cpu_pct_percentiles_formatted'] == '96.67%'
+    assert rule.matches[0]['metric_agg_value_formatted'] == '96.67%'
+
+    rules['metric_format_string'] = '%.2f'
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), None, {"doc_count":258757,"key":"appmailer","metric_cpu_pct_percentiles":{"values":[{"key":95,"value":0.966666667}]}})
+    assert '0.97' in rule.get_match_str(rule.matches[0])
+    assert rule.matches[0]['metric_cpu_pct_percentiles'] == 0.966666667
+    assert rule.matches[0]['metric_agg_value'] == 0.966666667
+    assert rule.matches[0]['metric_cpu_pct_percentiles_formatted'] == '0.97'
+    assert rule.matches[0]['metric_agg_value_formatted'] == '0.97'
+
+    rules['query_key'] = 'subdict'
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), 'qk_val', {'metric_cpu_pct_percentiles': {"values":[{"key":95,"value":0.95}]}})
+    assert rule.matches[0]['subdict'] == 'qk_val'
+
+    rules['query_key'] = 'subdict1.subdict2.subdict3'
+    rule = MetricAggregationRule(rules)
+    rule.check_matches(datetime.datetime.now(), 'qk_val', {'metric_cpu_pct_percentiles': {"values":[{"key":95,"value":0.95}]}})
+    assert rule.matches[0]['subdict1']['subdict2']['subdict3'] == 'qk_val'
+
 
 def test_metric_aggregation_complex_query_key():
     rules = {'buffer_time': datetime.timedelta(minutes=5),
@@ -1279,6 +1605,141 @@ def test_metric_aggregation_scripted():
     rule.check_matches(datetime.datetime.now(), None, {'metric_cpu_pct_avg': {'value': -0.5}})
     assert rule.matches[0]['metric_cpu_pct_avg'] == -0.5
 
+#mock_Response for get_ch_date
+def _mock_response(
+            status=200,
+            content='{"test": "test"}',
+            json_data=None,
+            raise_for_status= None):
+      
+    mock_resp = mock.Mock()
+    # mock raise_for_status call w/optional error
+    mock_resp.raise_for_status = mock.Mock()
+    if raise_for_status:
+        mock_resp.raise_for_status.side_effect = raise_for_status
+    # set status code and content
+    mock_resp.status_code = status
+    mock_resp.content = content
+    # add json data if provided
+    if json_data:
+        mock_resp.json = mock.Mock(return_value=json_data)
+    return mock_resp
+
+#Error rate rule testing methods
+def get_error_rate_tester(ea,total_count= 5,error_count= 10, count_all_errors=True):
+    #testing elastalert function that hits query_endpoint and gets aggregation data
+    rules = [{'es_host': '',
+              'es_port': 14900,
+              'name': 'error rate',
+              'index': 'idx',
+              'filter': [],
+              'include': ['@timestamp'],
+              'aggregation': datetime.timedelta(0),
+              'realert': datetime.timedelta(0),
+              'processed_hits': {},
+              'timestamp_field': '@timestamp',
+              'match_enhancements': [],
+              'rule_file': 'blah.yaml',
+              'max_query_size': 10000,
+              'ts_to_dt': ts_to_dt,
+              'dt_to_ts': dt_to_ts,
+              '_source_enabled': True,
+              'buffer_time': datetime.timedelta(minutes=5),
+              'sampling' : 100,
+              'threshold': 0.5,
+              'error_condition': 'exception.message: *',
+              'timestamp_field':'timestamp',
+              'type':'error_rate',
+              'total_agg_type': 'uniq',
+              'total_agg_key': 'traceID',
+              'count_all_errors': count_all_errors
+              }]
+    
+    ts = dt.now()
+    mock_responses = [
+        _mock_response(content = '{"data":[{"uniq(traceID)":'+ str(total_count)+'}],"rows":[] }'),
+        _mock_response(content = '{"data":[{"count()":'+ str(error_count)+'}],"rows":[] }')
+    ]
+
+    if(not count_all_errors):
+        mock_responses[1] = _mock_response(content = '{"data":[{"uniq(traceID)":'+ str(error_count)+'}],"rows":[] }')
+
+    with mock.patch('requests.post') as mock_post:
+        mock_post.side_effect = mock_responses
+        ea.get_error_rate(rules[0],ts,ts)
+        calls =  mock_post.call_args_list
+        assert calls[0][0][0] == "http://localhost:9999/v2/sherlock-alerts/traces/visualize"
+        assert calls[0][1]['json']['aggregations'] == [{'function': 'UNIQ', 'field': 'traceID'}]
+        assert calls[1][0][0] == "http://localhost:9999/v2/sherlock-alerts/traces/visualize"
+        if count_all_errors:
+            assert calls[1][1]['json']['aggregations'] == [{'function': 'COUNT', 'field': '1'}]
+        else:
+            assert calls[1][1]['json']['aggregations'] == [{'function': 'UNIQ', 'field': 'traceID'}]
+        assert calls[1][1]['json']['freshquery'] == rules[0]['error_condition']
+
+
+@pytest.mark.usefixtures("ea")
+def test_error_rate_rule(ea):
+    rules = {
+                'buffer_time': datetime.timedelta(minutes=5),
+                'sampling' : 100,
+                'threshold': 0.5,
+                'error_condition': "exception.message: *",
+                'unique_column': 'traceID',
+                'timestamp_field':'timestamp'
+             }
+
+
+    #testing default initialization baesd on error_calculation_method method
+
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_all_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_all_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == True
+
+    rules["error_calculation_method"] = 'count_traces_with_errors'
+    rule = ErrorRateRule(rules)
+    assert rule.rules['count_all_errors'] == False
+
+    timestamp = ts_now() 
+
+    payload = {
+       timestamp : 
+       {
+        'total_count': 0, 
+        'start_time': timestamp, 
+        'error_count': 0, 
+        'end_time': timestamp
+        }
+    }
+
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 0
+    
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 6
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 1
+
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 4
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 1
+
+    payload[timestamp]['total_count'] = 10
+    payload[timestamp]['error_count'] = 8
+    rule.calculate_err_rate(payload)
+    assert len(rule.matches) == 2
+
+    get_error_rate_tester(ea=ea,count_all_errors= True)
+    get_error_rate_tester(ea=ea,count_all_errors= False)
+
 
 def test_percentage_match():
     rules = {'match_bucket_filter': {'term': 'term_val'},
@@ -1296,11 +1757,17 @@ def test_percentage_match():
     assert rule.rules['aggregation_query_element'] == {
         'percentage_match_aggs': {
             'filters': {
-                'other_bucket': True,
                 'filters': {
                     'match_bucket': {
                         'bool': {
                             'must': {
+                                'term': 'term_val'
+                            }
+                        }
+                    },
+                    '_other_': {
+                        'bool': {
+                            'must_not': {
                                 'term': 'term_val'
                             }
                         }

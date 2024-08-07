@@ -1,44 +1,23 @@
-FROM python:3-slim-buster as builder
+FROM public.ecr.aws/i1i0w6p5/python:3.9.2 as build
 
-LABEL description="ElastAlert 2 Official Image"
-LABEL maintainer="Jason Ertel"
+ENV ELASTALERT_HOME /opt/elastalert
+ADD . /opt/elastalert/
 
-COPY . /tmp/elastalert
+WORKDIR /opt
 
-RUN mkdir -p /opt/elastalert && \
-    cd /tmp/elastalert && \
-    pip install setuptools wheel && \
-    python setup.py sdist bdist_wheel
+RUN pip install "setuptools==65.5.0" "elasticsearch==6.3.1"
 
-FROM python:3-slim-buster
+WORKDIR "${ELASTALERT_HOME}"
 
-ARG GID=1000
-ARG UID=1000
-ARG USERNAME=elastalert
+RUN pip install -r requirements.txt
+RUN python setup.py install
 
-COPY --from=builder /tmp/elastalert/dist/*.tar.gz /tmp/
+RUN pip show elastalert2
 
-RUN apt update && apt -y upgrade && \
-    apt -y install jq curl gcc libffi-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    pip install /tmp/*.tar.gz && \
-    rm -rf /tmp/* && \
-    apt -y remove gcc libffi-dev && \
-    apt -y autoremove && \
-    mkdir -p /opt/elastalert && \
-    echo "#!/bin/sh" >> /opt/elastalert/run.sh && \
-    echo "set -e" >> /opt/elastalert/run.sh && \
-    echo "elastalert-create-index --config /opt/elastalert/config.yaml" \
-        >> /opt/elastalert/run.sh && \
-    echo "elastalert --config /opt/elastalert/config.yaml \"\$@\"" \
-        >> /opt/elastalert/run.sh && \
-    chmod +x /opt/elastalert/run.sh && \
-    groupadd -g ${GID} ${USERNAME} && \
-    useradd -u ${UID} -g ${GID} -M -b /opt -s /sbin/nologin \
-        -c "ElastAlert 2 User" ${USERNAME}
-
-USER ${USERNAME}
-ENV TZ "UTC"
+RUN python --version
 
 WORKDIR /opt/elastalert
-ENTRYPOINT ["/opt/elastalert/run.sh"]
+
+COPY commands.sh /opt/elastalert/commands.sh
+RUN ["chmod", "+x", "/opt/elastalert/commands.sh"]
+ENTRYPOINT ["sh","/opt/elastalert/commands.sh"]

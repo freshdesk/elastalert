@@ -821,7 +821,8 @@ class FlatlineRule(FrequencyRule):
             # Do a deep-copy, otherwise we lose the datetime type in the timestamp field of the last event
             event = copy.deepcopy(self.occurrences[key].data[-1][0])
             event.update(key=key, count=count)
-            event[self.rules['query_key']]=key
+            if self.rules['query_key']:
+                event[self.rules['query_key']]=key
             self.add_match(event)
 
             if not self.rules.get('forget_keys'):

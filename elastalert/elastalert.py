@@ -541,6 +541,7 @@ class ElastAlerter(object):
     def get_hits_terms(self, rule, starttime, endtime, index, key, qk=None, size=None):
         rule_filter = copy.copy(rule['filter'])
         if qk:
+            qk = str(qk)
             elastalert_logger.info("Using query key: {} {}".format(qk, rule['name']))
             qk_list = qk.split(",")
             end = '.keyword'

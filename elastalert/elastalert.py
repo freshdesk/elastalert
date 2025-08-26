@@ -542,6 +542,7 @@ class ElastAlerter(object):
         rule_filter = copy.copy(rule['filter'])
         if qk:
             qk = str(qk)
+            elastalert_logger.info("Using query key: {} {}".format(qk, rule['name']))
             qk_list = qk.split(",")
             end = '.keyword'
 

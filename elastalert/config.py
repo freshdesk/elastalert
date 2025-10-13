@@ -26,7 +26,11 @@ env_settings = {'ES_USE_SSL': 'use_ssl',
                 'ES_URL_PREFIX': 'es_url_prefix',
                 'STATSD_INSTANCE_TAG': 'statsd_instance_tag',
                 'STATSD_HOST': 'statsd_host',
-                'X_ENV':'X_ENV'}
+                'X_ENV':'X_ENV',
+                'OTEL_EXPORTER_ENDPOINT': 'otel_exporter_endpoint',
+                'OTEL_SDK_VERSION': 'otel_sdk_version',
+                'TRACE_SERVICE_NAME': 'trace_service_name',
+                'TRACE_SAMPLING_PROBABILITY': 'trace_sampling_probability'}
 
 env = Env(ES_USE_SSL=bool)
 
@@ -80,6 +84,21 @@ def load_conf(args, defaults=None, overrides=None):
     conf.setdefault('scan_subdirectories', True)
     conf.setdefault('rules_loader', 'file')
     conf.setdefault('custom_pretty_ts_format', None)
+
+    # Set default tracing configuration
+    if 'tracing' not in conf:
+        conf['tracing'] = {}
+    
+    tracing_defaults = {
+        'enabled': False,
+        'otel_exporter_endpoint': 'http://localhost:4317',
+        'otel_sdk_version': '1.25.0',
+        'trace_service_name': 'elastalert',
+        'trace_sampling_probability': 1.0
+    }
+    
+    for key, default_value in tracing_defaults.items():
+        conf['tracing'].setdefault(key, default_value)
 
     # Convert run_every, buffer_time into a timedelta object
     try:

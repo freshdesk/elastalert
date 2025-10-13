@@ -124,4 +124,21 @@ alert_time_limit:
 #      handlers:
 #        - console
 #        - file
-#      propagate: false
+
+# OpenTelemetry Distributed Tracing Configuration
+# Enable distributed tracing to monitor ElastAlert's performance and operations
+#tracing:
+#  enabled: false
+#  otel_exporter_endpoint: "http://localhost:4317"  # OTLP gRPC endpoint
+#  otel_sdk_version: "1.25.0"
+#  trace_service_name: "elastalert"
+#  trace_sampling_probability: 1.0  # 1.0 = 100% sampling, 0.1 = 10% sampling
+
+# Example: Enable tracing with Jaeger (default setup)
+# Make sure Jaeger is running and accepting OTLP on port 4317
+# Docker command: docker run -d --name jaeger -p 4317:4317 -p 16686:16686 jaegertracing/all-in-one:latest
+#tracing:
+#  enabled: true
+#  otel_exporter_endpoint: "http://localhost:4317"
+#  trace_service_name: "elastalert-production"
+#  trace_sampling_probability: 0.1

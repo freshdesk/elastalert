@@ -40,6 +40,7 @@ from elastalert.kibana_discover import generate_kibana_discover_url
 from elastalert.kibana_external_url_formatter import create_kibana_external_url_formatter
 from elastalert.prometheus_wrapper import PrometheusWrapper
 from elastalert.ruletypes import FlatlineRule
+from elastalert import traceproviders
 from elastalert.util import (add_raw_postfix, cronite_datetime_to_timestamp, dt_to_ts, dt_to_unix, EAException,
                              elastalert_logger, elasticsearch_client, get_msearch_query,kibana_adapter_client, format_index, lookup_es_key, parse_deadline,
                              parse_duration, pretty_ts, replace_dots_in_field_names, seconds, set_es_key,
@@ -128,6 +129,19 @@ class ElastAlerter(object):
             tracer.addHandler(logging.FileHandler(self.args.es_debug_trace))
 
         self.conf = load_conf(self.args)
+        
+        # Initialize tracing if enabled
+        self.trace_shutdown_func = None
+        if self.conf['tracing'].get('enabled', False):
+            try:
+                self.trace_shutdown_func = traceproviders.init_tracer(self.conf['tracing'])
+                if self.trace_shutdown_func:
+                    elastalert_logger.info("OpenTelemetry tracing enabled for ElastAlert")
+                else:
+                    elastalert_logger.warning("Failed to initialize tracing")
+            except Exception as e:
+                elastalert_logger.error(f"Error initializing tracing: {e}")
+                
         self.rules_loader = self.conf['rules_loader']
         self.rules = self.rules_loader.load(self.conf, self.args)
 
@@ -380,6 +394,14 @@ class ElastAlerter(object):
         :param endtime: The latest time to query.
         :return: A list of hits, bounded by rule['max_query_size'] (or self.max_query_size).
         """
+        # Create tracing span for Elasticsearch query
+        span = traceproviders.create_span("get_hits", {
+            'rule.name': rule['name'],
+            'rule.index': index,
+            'query.start_time': str(starttime),
+            'query.end_time': str(endtime),
+            'query.scroll': scroll
+        })
 
         query = self.get_query(
             rule['filter'],
@@ -436,7 +458,14 @@ class ElastAlerter(object):
             # (so big that they will fill the entire terminal buffer)
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
+            
+            # Record error on span
+            traceproviders.record_error(span, e)
+            
             self.handle_error('Error running query: %s' % (e), {'rule': rule['name'], 'query': query})
+            
+            # End span before returning
+            traceproviders.end_span(span)
             return None
         hits = res['hits']['hits']
         self.thread_data.num_hits += len(hits)
@@ -454,6 +483,17 @@ class ElastAlerter(object):
             elastalert_logger.info(status_log)
 
         hits = self.process_hits(rule, hits)
+        
+        # Update span with query results
+        traceproviders.set_attributes(span, {
+            'query.hits_returned': len(hits),
+            'query.total_hits': self.thread_data.total_hits,
+            'query.num_hits': self.thread_data.num_hits
+        })
+        
+        # End tracing span
+        traceproviders.end_span(span)
+        
         return hits
 
     
@@ -1013,6 +1053,15 @@ class ElastAlerter(object):
         """
         run_start = time.time()
         
+        # Create tracing span for rule execution
+        span = traceproviders.create_span("run_rule", {
+            'rule.name': rule['name'],
+            'rule.type': str(rule.get('type', '')),
+            'rule.index': rule.get('index', ''),
+            'start_time': str(starttime),
+            'end_time': str(endtime)
+        })
+        
         self.thread_data.current_es = kibana_adapter_client(rule)
         self.current_es_addr = (rule['es_host'], rule['es_port'])
 
@@ -1145,6 +1194,17 @@ class ElastAlerter(object):
             except BaseException as e:
                 elastalert_logger.error("unable to send metrics:\n%s" % str(e))
 
+        # Update span with execution results
+        traceproviders.set_attributes(span, {
+            'rule.matches': num_matches,
+            'rule.hits': max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
+            'rule.time_taken': time_taken,
+            'rule.alerts_sent': self.thread_data.alerts_sent
+        })
+        
+        # End tracing span
+        traceproviders.end_span(span)
+        
         return num_matches
 
     def init_rule(self, new_rule, new=True):

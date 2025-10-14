@@ -91,8 +91,8 @@ def load_conf(args, defaults=None, overrides=None):
     
     tracing_defaults = {
         'enabled': False,
-        'otel_exporter_endpoint': 'http://localhost:4317',
-        'otel_sdk_version': '1.25.0',
+        'otel_exporter_endpoint': 'trace-shipper.trace-shipper:55680',
+        'otel_sdk_version': '1.21.0',
         'trace_service_name': 'elastalert',
         'trace_sampling_probability': 1.0
     }

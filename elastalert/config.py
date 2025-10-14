@@ -90,7 +90,7 @@ def load_conf(args, defaults=None, overrides=None):
         conf['tracing'] = {}
     
     tracing_defaults = {
-        'enabled': False,
+        'enabled': True,
         'otel_exporter_endpoint': 'trace-shipper.trace-shipper:55680',
         'otel_sdk_version': '1.21.0',
         'trace_service_name': 'elastalert',

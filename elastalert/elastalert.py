@@ -105,6 +105,8 @@ class ElastAlerter(object):
         self.parse_args(args)
         self.debug = self.args.debug
         self.verbose = self.args.verbose
+        # Initialize trace context for this ElastAlert instance
+        self._trace_context = None
 
         if self.verbose and self.debug:
             elastalert_logger.info(
@@ -394,8 +396,8 @@ class ElastAlerter(object):
         :param endtime: The latest time to query.
         :return: A list of hits, bounded by rule['max_query_size'] (or self.max_query_size).
         """
-        # Create tracing span for Elasticsearch query
-        span = traceproviders.create_span("get_hits", {
+        # Create tracing span for Elasticsearch query with context propagation (child of run_rule span)
+        ctx, span = traceproviders.create_span(self._trace_context, "get_hits", {
             'rule.name': rule['name'],
             'rule.index': index,
             'query.start_time': str(starttime),
@@ -1053,14 +1055,17 @@ class ElastAlerter(object):
         """
         run_start = time.time()
         
-        # Create tracing span for rule execution
-        span = traceproviders.create_span("run_rule", {
+        # Create tracing span for rule execution with context propagation (root or child span)
+        ctx, span = traceproviders.create_span(self._trace_context, "run_rule", {
             'rule.name': rule['name'],
             'rule.type': str(rule.get('type', '')),
             'rule.index': rule.get('index', ''),
             'start_time': str(starttime),
             'end_time': str(endtime)
         })
+        # Store context for child operations (like haystack-router pattern)
+        previous_context = self._trace_context
+        self._trace_context = ctx
         
         self.thread_data.current_es = kibana_adapter_client(rule)
         self.current_es_addr = (rule['es_host'], rule['es_port'])

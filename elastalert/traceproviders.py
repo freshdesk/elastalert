@@ -1,16 +1,14 @@
-# -*- coding: utf-8 -*-
 """
 OpenTelemetry tracing providers for ElastAlert.
 
 This module provides a unified interface for distributed tracing in ElastAlert,
-following the same patterns as haystack-router with proper context propagation.
+following proper context propagation patterns.
 """
 
 import logging
 import socket
 from typing import Optional, Dict, Any, Callable, Tuple
-from contextvars import ContextVar
-import contextvars
+import functools
 
 from opentelemetry import trace, context, propagate
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -20,6 +18,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.trace.sampling import TraceIdRatioBased, ParentBased
 from opentelemetry.semconv.resource import ResourceAttributes
 from opentelemetry.trace.status import Status, StatusCode
+from opentelemetry.trace import SpanKind
 
 # Global tracer and provider instances
 tracer: Optional[trace.Tracer] = None
@@ -27,10 +26,10 @@ trace_provider: Optional[TracerProvider] = None
 telemetry_sdk_name = "opentelemetry"
 
 
-# Attribute class (matching haystack-router pattern) - must be defined early
+# Attribute class (matching haystack-router pattern)
 class Attribute:
     """
-    Attribute wrapper class matching haystack-router's Attribute struct.
+    Attribute wrapper class for OpenTelemetry attributes.
     """
     def __init__(self, key: str, value: Any):
         self.key = key
@@ -46,11 +45,11 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
     Initialize the OpenTelemetry tracer with the given configuration.
     
     Args:
-        config: Dictionary containing tracing configuration with keys (matching haystack-router):
-            - otel_exporter_endpoint: OTLP gRPC endpoint (TraceOTELExporterEndpoint)
-            - otel_sdk_version: OpenTelemetry SDK version (TraceOTELSDKVersion)
-            - trace_service_name: Service name for traces (TraceServiceName)
-            - trace_sampling_probability: Sampling probability (TraceSamplingProbability)
+        config: Dictionary containing tracing configuration with keys:
+            - otel_exporter_endpoint: OTLP gRPC endpoint
+            - otel_sdk_version: OpenTelemetry SDK version
+            - trace_service_name: Service name for traces
+            - trace_sampling_probability: Sampling probability
     
     Returns:
         Shutdown function for graceful cleanup, or None if initialization failed
@@ -61,7 +60,7 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
         return trace_provider.shutdown
     
     try:
-        # Create resource with service information (matching haystack-router exactly)
+        # Create resource with service information
         resource_attrs = {
             ResourceAttributes.SERVICE_NAME: config.get('trace_service_name', 'elastalert'),
             ResourceAttributes.TELEMETRY_SDK_NAME: telemetry_sdk_name,
@@ -70,11 +69,10 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
             ResourceAttributes.HOST_NAME: get_hostname(),
         }
         
-        # Add server address (use different attribute names depending on OpenTelemetry version)
+        # Add server address
         try:
             resource_attrs[ResourceAttributes.SERVER_ADDRESS] = get_host_ip()
         except AttributeError:
-            # Fallback for older versions - use a custom attribute
             resource_attrs["server.address"] = get_host_ip()
         
         resource = Resource.create(resource_attrs)
@@ -82,7 +80,7 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
         # Create OTLP exporter
         otlp_exporter = OTLPSpanExporter(
             endpoint=config.get('otel_exporter_endpoint', 'http://localhost:4317'),
-            insecure=True  # Note: Use secure connections in production
+            insecure=True
         )
         
         # Create tracer provider with sampling
@@ -102,7 +100,7 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
         # Set global tracer provider
         trace.set_tracer_provider(trace_provider)
         
-        # Set global propagator to tracecontext (matching haystack-router exactly)
+        # Set global propagator for context propagation
         try:
             from opentelemetry.propagators.composite import CompositeHTTPPropagator
             from opentelemetry.propagators.tracecontext import TraceContextTextMapPropagator as TCPropagator
@@ -113,7 +111,6 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
                 BaggagePropagator()
             ]))
         except ImportError:
-            # Fallback for different OpenTelemetry versions
             from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
             from opentelemetry.baggage.propagation import W3CBaggagePropagator
             from opentelemetry.propagators.composite import CompositePropagator
@@ -123,7 +120,7 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
                 W3CBaggagePropagator()
             ]))
         
-        # Create tracer instance (matching haystack-router pattern)
+        # Create tracer instance
         tracer = trace_provider.get_tracer("elastalert-service")
         
         logging.getLogger('elastalert').info("OpenTelemetry tracing initialized successfully")
@@ -137,13 +134,12 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
 
 def create_span(ctx: Optional[Any], name: str, attributes: Optional[Dict[str, Any]] = None) -> Tuple[Any, trace.Span]:
     """
-    Create a new span with the given name and attributes, following haystack-router pattern.
-    Matches: CreateSpan(ctx context.Context, name string, attributes ...Attribute) (context.Context, trace.Span)
+    Create a new span with the given name and attributes, with proper context propagation.
     
     Args:
         ctx: Parent context (can be None) - should contain parent span for proper parent-child relationships
         name: Name of the span
-        attributes: Optional dictionary of span attributes
+        attributes: Dictionary of span attributes
     
     Returns:
         Tuple of (new_context, span) - new context with span and the span object
@@ -153,39 +149,27 @@ def create_span(ctx: Optional[Any], name: str, attributes: Optional[Dict[str, An
         noop_span = trace.NonRecordingSpan(trace.SpanContext(
             trace_id=0,
             span_id=0,
-            is_remote=False
+            is_remote=False,
+            trace_flags=trace.TraceFlags(0)
         ))
         return ctx, noop_span
     
     try:
         # Create span with proper parent-child relationship
-        # If ctx is None, create background context
         if ctx is None:
-            # Create span without parent (root span)
-            span = tracer.start_span(name)
+            # Create root span with background context
+            span = tracer.start_span(name, kind=SpanKind.INTERNAL)
         else:
-            # Create child span from parent context - THIS IS THE KEY!
-            span = tracer.start_span(name, context=ctx)
+            # Create child span from parent context - KEY FOR CONTEXT PROPAGATION
+            span = tracer.start_span(name, context=ctx, kind=SpanKind.INTERNAL)
         
-        # Set attributes if provided (supporting both dict and Attribute patterns)
+        # Set attributes if provided
         if attributes:
-            if isinstance(attributes, dict):
-                # Dictionary format for backward compatibility
-                for key, value in attributes.items():
-                    span.set_attribute(key, value)
-            else:
-                # Assume it's iterable of Attribute objects (haystack-router style)
-                try:
-                    trace_attributes = _convert_to_trace_attributes(*attributes)
-                    for key, value in trace_attributes:
-                        span.set_attribute(key, value)
-                except:
-                    # Fallback to dict format
-                    for key, value in attributes.items():
-                        span.set_attribute(key, value)
+            for key, value in attributes.items():
+                span.set_attribute(key, str(value))
         
         # Create new context with this span (for passing to child operations)
-        new_ctx = trace.set_span_in_context(span, ctx or context.Context())
+        new_ctx = trace.set_span_in_context(span, ctx if ctx is not None else context.get_current())
         
         return new_ctx, span
         
@@ -194,15 +178,15 @@ def create_span(ctx: Optional[Any], name: str, attributes: Optional[Dict[str, An
         noop_span = trace.NonRecordingSpan(trace.SpanContext(
             trace_id=0,
             span_id=0,
-            is_remote=False
+            is_remote=False,
+            trace_flags=trace.TraceFlags(0)
         ))
         return ctx, noop_span
 
 
 def context_with_span(span: trace.Span) -> Any:
     """
-    Create a context with the given span (for scatter-gather operations).
-    Matches: ContextWithSpan(span trace.Span) context.Context
+    Create a context with the given span.
     
     Args:
         span: Span to embed in context
@@ -210,14 +194,12 @@ def context_with_span(span: trace.Span) -> Any:
     Returns:
         New context with the span
     """
-    # Create fresh context with the span (like haystack-router does)
-    return trace.set_span_in_context(span, context.Context())
+    return trace.set_span_in_context(span, context.get_current())
 
 
 def get_span_from_context(ctx: Optional[Any]) -> trace.Span:
     """
     Get the current span from the context.
-    Matches: GetSpanFromContext(ctx context.Context) trace.Span
     
     Args:
         ctx: Context to get span from
@@ -228,7 +210,6 @@ def get_span_from_context(ctx: Optional[Any]) -> trace.Span:
     if ctx is None:
         return trace.get_current_span()
     
-    # Get span from the provided context
     return trace.get_current_span(ctx)
 
 
@@ -239,7 +220,7 @@ def end_span(span: trace.Span):
     Args:
         span: Span to end
     """
-    if span:
+    if span and span.is_recording():
         span.end()
 
 
@@ -251,39 +232,46 @@ def record_error(span: trace.Span, error: Exception):
         span: Span to record error on
         error: Exception to record
     """
-    if span and error:
+    if span and span.is_recording() and error:
         span.record_exception(error)
         span.set_status(Status(StatusCode.ERROR, str(error)))
 
 
 def add_event(span: trace.Span, name: str, *attributes: Attribute):
     """
-    Add an event to the given span (matching haystack-router AddEvent signature).
-    Matches: AddEvent(span trace.Span, name string, attributes ...Attribute)
+    Add an event to the given span.
     
     Args:
         span: Span to add event to
         name: Name of the event
         attributes: Variable number of Attribute objects
     """
-    if span:
+    if span and span.is_recording():
         trace_attributes = _convert_to_trace_attributes(*attributes)
         span.add_event(name, dict(trace_attributes))
 
 
-def set_attributes(span: trace.Span, *attributes: Attribute):
+def set_attributes(span: trace.Span, attributes: Optional[Dict[str, Any]] = None, **kwargs):
     """
-    Set attributes on the given span (matching haystack-router SetAttributes signature).
-    Matches: SetAttributes(span trace.Span, attributes ...Attribute)
+    Set attributes on the given span.
     
     Args:
         span: Span to set attributes on
-        attributes: Variable number of Attribute objects
+        attributes: Dictionary of attributes to set
+        **kwargs: Additional key-value pairs for attributes
     """
-    if span and attributes:
-        trace_attributes = _convert_to_trace_attributes(*attributes)
-        for key, value in trace_attributes:
-            span.set_attribute(key, value)
+    if not span or not span.is_recording():
+        return
+    
+    # Handle dictionary attributes
+    if attributes:
+        for key, value in attributes.items():
+            span.set_attribute(key, str(value))
+    
+    # Handle keyword arguments
+    if kwargs:
+        for key, value in kwargs.items():
+            span.set_attribute(key, str(value))
 
 
 def get_hostname() -> str:
@@ -307,7 +295,6 @@ def get_host_ip() -> str:
         IP address string
     """
     try:
-        # Connect to a dummy address to find the local IP
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
             return s.getsockname()[0]
@@ -318,18 +305,17 @@ def get_host_ip() -> str:
 class TraceContextManager:
     """
     Context manager for creating and managing spans with automatic cleanup.
-    Similar to haystack-router pattern but with Python context managers.
     """
     
-    def __init__(self, ctx: Optional[Any], name: str, attributes: Optional[Dict[str, Any]] = None):
+    def __init__(self, ctx: Optional[Any], name: str, **attributes):
         self.ctx = ctx
         self.name = name
-        self.attributes = attributes or {}
+        self.attributes = attributes
         self.span: Optional[trace.Span] = None
         self.new_ctx: Optional[Any] = None
     
     def __enter__(self) -> Tuple[Any, trace.Span]:
-        self.new_ctx, self.span = create_span(self.ctx, self.name, self.attributes)
+        self.new_ctx, self.span = create_span(self.ctx, self.name, **self.attributes)
         return self.new_ctx, self.span
     
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -338,29 +324,30 @@ class TraceContextManager:
         end_span(self.span)
 
 
-def trace_operation(name: str, attributes: Optional[Dict[str, Any]] = None):
+def trace_operation(name: str, **attributes):
     """
     Decorator for tracing function operations with context propagation.
     
     Args:
         name: Name of the span
-        attributes: Optional span attributes
+        **attributes: Keyword arguments for span attributes (labels)
     
     Returns:
         Decorated function
     """
     def decorator(func):
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # Try to get context from args (if available)
+            # Try to get context from self._trace_context if available
             ctx = None
             if args and hasattr(args[0], '_trace_context'):
                 ctx = getattr(args[0], '_trace_context', None)
                 
-            with TraceContextManager(ctx, name, attributes) as (new_ctx, span):
-                set_attributes(span, {
-                    'function.name': func.__name__,
-                    'function.module': func.__module__,
-                })
+            with TraceContextManager(ctx, name, **attributes) as (new_ctx, span):
+                set_attributes(span, 
+                    function_name=func.__name__,
+                    function_module=func.__module__
+                )
                 
                 # If first argument has context attribute, update it
                 if args and hasattr(args[0], '_trace_context'):
@@ -371,41 +358,170 @@ def trace_operation(name: str, attributes: Optional[Dict[str, Any]] = None):
     return decorator
 
 
-# Attribute helper functions (exactly matching haystack-router pattern)
-
+# Attribute helper functions
 
 def string_attribute(key: str, value: str) -> Attribute:
-    """Create a string attribute (matching haystack-router StringAttribute)."""
+    """Create a string attribute."""
     return Attribute(key, value)
 
 
 def int_attribute(key: str, value: int) -> Attribute:
-    """Create an integer attribute (matching haystack-router IntAttribute)."""
+    """Create an integer attribute."""
     return Attribute(key, value)
 
 
 def int64_attribute(key: str, value: int) -> Attribute:
-    """Create an int64 attribute (matching haystack-router Int64Attribute)."""
+    """Create an int64 attribute."""
     return Attribute(key, value)
 
 
 def float64_attribute(key: str, value: float) -> Attribute:
-    """Create a float64 attribute (matching haystack-router Float64Attribute)."""
+    """Create a float64 attribute."""
     return Attribute(key, value)
 
 
 def bool_attribute(key: str, value: bool) -> Attribute:
-    """Create a boolean attribute (matching haystack-router BoolAttribute)."""
+    """Create a boolean attribute."""
     return Attribute(key, value)
 
 
 def _convert_to_trace_attributes(*attributes: Attribute) -> list:
     """
     Convert Attribute objects to OpenTelemetry format.
-    Matches haystack-router's convertToTraceAttributes function.
     """
     trace_attributes = []
     for attr in attributes:
         if isinstance(attr, Attribute):
             trace_attributes.append(attr.get_attribute())
     return trace_attributes
+
+
+# Additional helper functions for custom tracing
+
+def add_span_labels(**labels):
+    """
+    Add custom labels to the current active span.
+    
+    Args:
+        **labels: Keyword arguments for labels
+    """
+    current_span = trace.get_current_span()
+    if current_span and current_span.is_recording():
+        for key, value in labels.items():
+            current_span.set_attribute(f"label.{key}", str(value))
+
+
+def add_span_event_simple(event_name: str, **attributes):
+    """
+    Add an event to the current active span.
+    
+    Args:
+        event_name: Name of the event
+        **attributes: Event attributes
+    """
+    current_span = trace.get_current_span()
+    if current_span and current_span.is_recording():
+        current_span.add_event(event_name, attributes or {})
+
+
+def get_current_trace_info() -> Dict[str, str]:
+    """
+    Get current trace context information.
+    
+    Returns:
+        Dictionary with trace_id, span_id, and other context info
+    """
+    current_span = trace.get_current_span()
+    if not current_span:
+        return {"error": "No current span available"}
+    
+    span_context = current_span.get_span_context()
+    if not span_context.is_valid:
+        return {"error": "No valid span context available"}
+    
+    return {
+        "trace_id": f"{span_context.trace_id:032x}",
+        "span_id": f"{span_context.span_id:016x}",
+        "is_sampled": str(span_context.trace_flags & 1 == 1),  # Check sampled flag
+        "is_remote": str(span_context.is_remote),
+    }
+
+
+def create_child_span_from_current(name: str, attributes: Optional[Dict[str, Any]] = None) -> Tuple[Any, trace.Span]:
+    """
+    Create a child span from the current active span context.
+    Useful for operations within the same thread.
+    
+    Args:
+        name: Name of the span
+        attributes: Dictionary of span attributes
+    
+    Returns:
+        Tuple of (new_context, span)
+    """
+    current_ctx = context.get_current()
+    return create_span(current_ctx, name, attributes)
+
+
+def trace_method(method_name: Optional[str] = None, **attributes):
+    """
+    Decorator to automatically trace method calls.
+    
+    Args:
+        method_name: Optional custom name for the span (defaults to method name)
+        **attributes: Additional attributes to add to the span
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            # Use method name if not provided
+            span_name = method_name or f"{self.__class__.__name__}.{func.__name__}"
+            
+            # Get context from self if available
+            ctx = getattr(self, '_trace_context', None)
+            
+            # Merge function info with custom attributes
+            span_attributes = {
+                'method.class': self.__class__.__name__,
+                'method.function': func.__name__,
+                **attributes
+            }
+            
+            span_ctx, span = create_span(ctx, span_name, span_attributes)
+            
+            # Update instance context if it has one
+            if hasattr(self, '_trace_context'):
+                original_ctx = self._trace_context
+                self._trace_context = span_ctx
+            
+            try:
+                result = func(self, *args, **kwargs)
+                
+                # Record success
+                set_attributes(span, {'method.status': 'success'})
+                
+                return result
+            except Exception as e:
+                # Record error
+                record_error(span, e)
+                set_attributes(span, {'method.status': 'error'})
+                raise
+            finally:
+                # Restore original context if it was set
+                if hasattr(self, '_trace_context'):
+                    self._trace_context = original_ctx
+                    
+                end_span(span)
+        
+        return wrapper
+    return decorator
+
+
+def is_tracing_enabled() -> bool:
+    """
+    Check if tracing is currently enabled and functional.
+    
+    Returns:
+        True if tracing is enabled, False otherwise
+    """
+    return tracer is not None and trace_provider is not None

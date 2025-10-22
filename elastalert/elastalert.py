@@ -404,6 +404,10 @@ class ElastAlerter(object):
             'query.end_time': str(endtime),
             'query.scroll': scroll
         })
+        
+        # Store previous context and update for any nested operations
+        previous_context = self._trace_context
+        self._trace_context = ctx
 
         query = self.get_query(
             rule['filter'],
@@ -466,7 +470,8 @@ class ElastAlerter(object):
             
             self.handle_error('Error running query: %s' % (e), {'rule': rule['name'], 'query': query})
             
-            # End span before returning
+            # Restore context and end span before returning
+            self._trace_context = previous_context
             traceproviders.end_span(span)
             return None
         hits = res['hits']['hits']
@@ -492,6 +497,9 @@ class ElastAlerter(object):
             'query.total_hits': self.thread_data.total_hits,
             'query.num_hits': self.thread_data.num_hits
         })
+        
+        # Restore previous context
+        self._trace_context = previous_context
         
         # End tracing span
         traceproviders.end_span(span)
@@ -1214,10 +1222,20 @@ class ElastAlerter(object):
 
     def init_rule(self, new_rule, new=True):
         ''' Copies some necessary non-config state from an exiting rule to a new rule. '''
-        if not new and self.scheduler.get_job(job_id=new_rule['name']):
-            self.scheduler.remove_job(job_id=new_rule['name'])
+        # Create tracing span for rule initialization
+        ctx, span = traceproviders.create_span(self._trace_context, "init_rule", {
+            'rule.name': new_rule['name'],
+            'rule.type': str(new_rule.get('type', '')),
+            'rule.index': new_rule.get('index', ''),
+            'rule.new': new,
+            'rule.has_scheduler_job': bool(not new and self.scheduler.get_job(job_id=new_rule['name']))
+        })
+        
+        try:
+            if not new and self.scheduler.get_job(job_id=new_rule['name']):
+                self.scheduler.remove_job(job_id=new_rule['name'])
 
-        self.enhance_filter(new_rule)
+            self.enhance_filter(new_rule)
 
         # Change top_count_keys to .raw
         if 'top_count_keys' in new_rule and new_rule.get('raw_count_keys', True):
@@ -1253,21 +1271,40 @@ class ElastAlerter(object):
                            'starttime',
                            'minimum_starttime',
                            'has_run_once']
-        for prop in copy_properties:
-            if prop not in rule:
-                continue
-            new_rule[prop] = rule[prop]
+            for prop in copy_properties:
+                if prop not in rule:
+                    continue
+                new_rule[prop] = rule[prop]
 
-        job = self.scheduler.add_job(self.handle_rule_execution, 'interval',
-                                     args=[new_rule],
-                                     seconds=new_rule['run_every'].total_seconds(),
-                                     id=new_rule['name'],
-                                     name="Rule: %s" % (new_rule['name']),
-                                     max_instances=1,
-                                     jitter=5)
-        job.modify(next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=random.randint(0, 15)))
+            job = self.scheduler.add_job(self.handle_rule_execution, 'interval',
+                                         args=[new_rule],
+                                         seconds=new_rule['run_every'].total_seconds(),
+                                         id=new_rule['name'],
+                                         name="Rule: %s" % (new_rule['name']),
+                                         max_instances=1,
+                                         jitter=5)
+            job.modify(next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=random.randint(0, 15)))
 
-        return new_rule
+            # Record successful rule initialization
+            traceproviders.set_attributes(span, {
+                'rule.initialization_status': 'completed',
+                'rule.scheduler_job_created': True,
+                'rule.run_interval_seconds': new_rule['run_every'].total_seconds()
+            })
+            
+            return new_rule
+        
+        except Exception as e:
+            # Record error on span
+            traceproviders.record_error(span, e)
+            traceproviders.set_attributes(span, {
+                'rule.initialization_status': 'failed',
+                'rule.error_message': str(e)
+            })
+            raise
+        finally:
+            # End tracing span
+            traceproviders.end_span(span)
 
     def load_rule_changes(self):
         """ Using the modification times of rule config files, syncs the running rules
@@ -1557,10 +1594,43 @@ class ElastAlerter(object):
 
     def alert(self, matches, rule, alert_time=None, retried=False):
         """ Wraps alerting, Kibana linking and enhancements in an exception handler """
+        # Create tracing span for alert operation
+        ctx, span = traceproviders.create_span(self._trace_context, "alert", {
+            'rule.name': rule['name'],
+            'alert.matches_count': len(matches) if matches else 0,
+            'alert.retried': retried,
+            'alert.alert_time': str(alert_time) if alert_time else str(ts_now())
+        })
+        
+        # Store previous context and update for child operations
+        previous_context = self._trace_context
+        self._trace_context = ctx
+        
         try:
-            return self.send_alert(matches, rule, alert_time=alert_time, retried=retried)
+            result = self.send_alert(matches, rule, alert_time=alert_time, retried=retried)
+            
+            # Record successful alert
+            traceproviders.set_attributes(span, {
+                'alert.status': 'success',
+                'alert.sent': True
+            })
+            
+            return result
         except Exception as e:
+            # Record error on span
+            traceproviders.record_error(span, e)
+            traceproviders.set_attributes(span, {
+                'alert.status': 'error',
+                'alert.sent': False,
+                'alert.error_message': str(e)
+            })
+            
             self.handle_uncaught_exception(e, rule)
+        finally:
+            # Restore previous context
+            self._trace_context = previous_context
+            # End tracing span
+            traceproviders.end_span(span)
 
     def send_alert(self, matches, rule, alert_time=None, retried=False):
         """ Send out an alert.
@@ -1568,7 +1638,24 @@ class ElastAlerter(object):
         :param matches: A list of matches.
         :param rule: A rule configuration.
         """
+        # Create tracing span for send_alert operation (child of alert span)
+        ctx, span = traceproviders.create_span(self._trace_context, "send_alert", {
+            'rule.name': rule['name'],
+            'alert.matches_count': len(matches) if matches else 0,
+            'alert.retried': retried,
+            'alert.has_alerters': len(rule.get('alert', [])) > 0
+        })
+        
+        # Store previous context for proper nesting
+        previous_context = self._trace_context
+        self._trace_context = ctx
+        
         if not matches:
+            traceproviders.set_attributes(span, {
+                'alert.status': 'skipped',
+                'alert.reason': 'no_matches'
+            })
+            traceproviders.end_span(span)
             return
 
         if alert_time is None:
@@ -1653,6 +1740,18 @@ class ElastAlerter(object):
             res = self.writeback('elastalert', alert_body, rule)
             if res and not agg_id:
                 agg_id = res['_id']
+        
+        # Record successful send_alert completion
+        traceproviders.set_attributes(span, {
+            'alert.processing_completed': True,
+            'alert.alerters_count': len(rule.get('alert', []))
+        })
+        
+        # Restore previous context
+        self._trace_context = previous_context
+        
+        # End tracing span
+        traceproviders.end_span(span)
 
     def get_alert_body(self, match, rule, alert_sent, alert_time, alert_exception=None):
         body = {

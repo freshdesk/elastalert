@@ -133,11 +133,11 @@ class ElastAlerter(object):
         self.conf = load_conf(self.args)
         
         # Initialize tracing if enabled
-        self.trace_shutdown_func = None
+        self.shutdown = None
         if self.conf['tracing'].get('enabled', False):
             try:
-                self.trace_shutdown_func = traceproviders.init_tracer(self.conf['tracing'])
-                if self.trace_shutdown_func:
+                self.shutdown = traceproviders.init_tracer(self.conf['tracing'])
+                if self.shutdown:
                     elastalert_logger.info("OpenTelemetry tracing enabled for ElastAlert")
                 else:
                     elastalert_logger.warning("Failed to initialize tracing")

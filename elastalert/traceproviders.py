@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any, Callable, Tuple
 from contextvars import ContextVar
 import contextvars
 
-from opentelemetry import trace, context
+from opentelemetry import trace, context, propagate
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider, Span
@@ -27,16 +27,30 @@ trace_provider: Optional[TracerProvider] = None
 telemetry_sdk_name = "opentelemetry"
 
 
+# Attribute class (matching haystack-router pattern) - must be defined early
+class Attribute:
+    """
+    Attribute wrapper class matching haystack-router's Attribute struct.
+    """
+    def __init__(self, key: str, value: Any):
+        self.key = key
+        self.value = value
+    
+    def get_attribute(self) -> tuple:
+        """Get attribute as tuple for OpenTelemetry."""
+        return (self.key, self.value)
+
+
 def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
     """
     Initialize the OpenTelemetry tracer with the given configuration.
     
     Args:
-        config: Dictionary containing tracing configuration with keys:
-            - otel_exporter_endpoint: OTLP gRPC endpoint (e.g., "localhost:4317")
-            - otel_sdk_version: OpenTelemetry SDK version
-            - trace_service_name: Service name for traces
-            - trace_sampling_probability: Sampling probability (0.0-1.0)
+        config: Dictionary containing tracing configuration with keys (matching haystack-router):
+            - otel_exporter_endpoint: OTLP gRPC endpoint (TraceOTELExporterEndpoint)
+            - otel_sdk_version: OpenTelemetry SDK version (TraceOTELSDKVersion)
+            - trace_service_name: Service name for traces (TraceServiceName)
+            - trace_sampling_probability: Sampling probability (TraceSamplingProbability)
     
     Returns:
         Shutdown function for graceful cleanup, or None if initialization failed
@@ -47,15 +61,23 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
         return trace_provider.shutdown
     
     try:
-        # Create resource with service information
-        resource = Resource.create({
+        # Create resource with service information (matching haystack-router exactly)
+        resource_attrs = {
             ResourceAttributes.SERVICE_NAME: config.get('trace_service_name', 'elastalert'),
             ResourceAttributes.TELEMETRY_SDK_NAME: telemetry_sdk_name,
-            ResourceAttributes.TELEMETRY_SDK_LANGUAGE: "python",
+            ResourceAttributes.TELEMETRY_SDK_LANGUAGE: "python", 
             ResourceAttributes.TELEMETRY_SDK_VERSION: config.get('otel_sdk_version', '1.25.0'),
             ResourceAttributes.HOST_NAME: get_hostname(),
-            ResourceAttributes.HOST_ID: get_host_ip(),  # Using HOST_ID for IP address
-        })
+        }
+        
+        # Add server address (use different attribute names depending on OpenTelemetry version)
+        try:
+            resource_attrs[ResourceAttributes.SERVER_ADDRESS] = get_host_ip()
+        except AttributeError:
+            # Fallback for older versions - use a custom attribute
+            resource_attrs["server.address"] = get_host_ip()
+        
+        resource = Resource.create(resource_attrs)
         
         # Create OTLP exporter
         otlp_exporter = OTLPSpanExporter(
@@ -80,8 +102,29 @@ def init_tracer(config: Dict[str, Any]) -> Optional[Callable]:
         # Set global tracer provider
         trace.set_tracer_provider(trace_provider)
         
-        # Create tracer instance
-        tracer = trace.get_tracer("elastalert-service")
+        # Set global propagator to tracecontext (matching haystack-router exactly)
+        try:
+            from opentelemetry.propagators.composite import CompositeHTTPPropagator
+            from opentelemetry.propagators.tracecontext import TraceContextTextMapPropagator as TCPropagator
+            from opentelemetry.propagators.baggage import BaggagePropagator
+            
+            propagate.set_global_textmap(CompositeHTTPPropagator([
+                TCPropagator(),
+                BaggagePropagator()
+            ]))
+        except ImportError:
+            # Fallback for different OpenTelemetry versions
+            from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+            from opentelemetry.baggage.propagation import W3CBaggagePropagator
+            from opentelemetry.propagators.composite import CompositePropagator
+            
+            propagate.set_global_textmap(CompositePropagator([
+                TraceContextTextMapPropagator(),
+                W3CBaggagePropagator()
+            ]))
+        
+        # Create tracer instance (matching haystack-router pattern)
+        tracer = trace_provider.get_tracer("elastalert-service")
         
         logging.getLogger('elastalert').info("OpenTelemetry tracing initialized successfully")
         
@@ -124,10 +167,22 @@ def create_span(ctx: Optional[Any], name: str, attributes: Optional[Dict[str, An
             # Create child span from parent context - THIS IS THE KEY!
             span = tracer.start_span(name, context=ctx)
         
-        # Set attributes if provided
+        # Set attributes if provided (supporting both dict and Attribute patterns)
         if attributes:
-            for key, value in attributes.items():
-                span.set_attribute(key, value)
+            if isinstance(attributes, dict):
+                # Dictionary format for backward compatibility
+                for key, value in attributes.items():
+                    span.set_attribute(key, value)
+            else:
+                # Assume it's iterable of Attribute objects (haystack-router style)
+                try:
+                    trace_attributes = _convert_to_trace_attributes(*attributes)
+                    for key, value in trace_attributes:
+                        span.set_attribute(key, value)
+                except:
+                    # Fallback to dict format
+                    for key, value in attributes.items():
+                        span.set_attribute(key, value)
         
         # Create new context with this span (for passing to child operations)
         new_ctx = trace.set_span_in_context(span, ctx or context.Context())
@@ -201,29 +256,33 @@ def record_error(span: trace.Span, error: Exception):
         span.set_status(Status(StatusCode.ERROR, str(error)))
 
 
-def add_event(span: trace.Span, name: str, attributes: Optional[Dict[str, Any]] = None):
+def add_event(span: trace.Span, name: str, *attributes: Attribute):
     """
-    Add an event to the given span.
+    Add an event to the given span (matching haystack-router AddEvent signature).
+    Matches: AddEvent(span trace.Span, name string, attributes ...Attribute)
     
     Args:
         span: Span to add event to
         name: Name of the event
-        attributes: Optional event attributes
+        attributes: Variable number of Attribute objects
     """
     if span:
-        span.add_event(name, attributes or {})
+        trace_attributes = _convert_to_trace_attributes(*attributes)
+        span.add_event(name, dict(trace_attributes))
 
 
-def set_attributes(span: trace.Span, attributes: Dict[str, Any]):
+def set_attributes(span: trace.Span, *attributes: Attribute):
     """
-    Set attributes on the given span.
+    Set attributes on the given span (matching haystack-router SetAttributes signature).
+    Matches: SetAttributes(span trace.Span, attributes ...Attribute)
     
     Args:
         span: Span to set attributes on
-        attributes: Dictionary of attributes to set
+        attributes: Variable number of Attribute objects
     """
     if span and attributes:
-        for key, value in attributes.items():
+        trace_attributes = _convert_to_trace_attributes(*attributes)
+        for key, value in trace_attributes:
             span.set_attribute(key, value)
 
 
@@ -312,22 +371,41 @@ def trace_operation(name: str, attributes: Optional[Dict[str, Any]] = None):
     return decorator
 
 
-# Attribute helper functions (matching haystack-router pattern)
-def string_attribute(key: str, value: str) -> Dict[str, str]:
-    """Create a string attribute."""
-    return {key: value}
+# Attribute helper functions (exactly matching haystack-router pattern)
 
 
-def int_attribute(key: str, value: int) -> Dict[str, int]:
-    """Create an integer attribute."""
-    return {key: value}
+def string_attribute(key: str, value: str) -> Attribute:
+    """Create a string attribute (matching haystack-router StringAttribute)."""
+    return Attribute(key, value)
 
 
-def float_attribute(key: str, value: float) -> Dict[str, float]:
-    """Create a float attribute."""
-    return {key: value}
+def int_attribute(key: str, value: int) -> Attribute:
+    """Create an integer attribute (matching haystack-router IntAttribute)."""
+    return Attribute(key, value)
 
 
-def bool_attribute(key: str, value: bool) -> Dict[str, bool]:
-    """Create a boolean attribute."""
-    return {key: value}
+def int64_attribute(key: str, value: int) -> Attribute:
+    """Create an int64 attribute (matching haystack-router Int64Attribute)."""
+    return Attribute(key, value)
+
+
+def float64_attribute(key: str, value: float) -> Attribute:
+    """Create a float64 attribute (matching haystack-router Float64Attribute)."""
+    return Attribute(key, value)
+
+
+def bool_attribute(key: str, value: bool) -> Attribute:
+    """Create a boolean attribute (matching haystack-router BoolAttribute)."""
+    return Attribute(key, value)
+
+
+def _convert_to_trace_attributes(*attributes: Attribute) -> list:
+    """
+    Convert Attribute objects to OpenTelemetry format.
+    Matches haystack-router's convertToTraceAttributes function.
+    """
+    trace_attributes = []
+    for attr in attributes:
+        if isinstance(attr, Attribute):
+            trace_attributes.append(attr.get_attribute())
+    return trace_attributes

@@ -1237,40 +1237,40 @@ class ElastAlerter(object):
 
             self.enhance_filter(new_rule)
 
-        # Change top_count_keys to .raw
-        if 'top_count_keys' in new_rule and new_rule.get('raw_count_keys', True):
-            if self.string_multi_field_name:
-                string_multi_field_name = self.string_multi_field_name
-            else:
-                string_multi_field_name = '.keyword'
+            # Change top_count_keys to .raw
+            if 'top_count_keys' in new_rule and new_rule.get('raw_count_keys', True):
+                if self.string_multi_field_name:
+                    string_multi_field_name = self.string_multi_field_name
+                else:
+                    string_multi_field_name = '.keyword'
 
-            for i, key in enumerate(new_rule['top_count_keys']):
-                if not key.endswith(string_multi_field_name):
-                    new_rule['top_count_keys'][i] += string_multi_field_name
+                for i, key in enumerate(new_rule['top_count_keys']):
+                    if not key.endswith(string_multi_field_name):
+                        new_rule['top_count_keys'][i] += string_multi_field_name
 
-        blank_rule = {'agg_matches': [],
-                      'aggregate_alert_time': {},
-                      'current_aggregate_id': {},
-                      'processed_hits': {},
-                      'run_every': self.run_every,
-                      'has_run_once': False}
-        rule = blank_rule
+            blank_rule = {'agg_matches': [],
+                          'aggregate_alert_time': {},
+                          'current_aggregate_id': {},
+                          'processed_hits': {},
+                          'run_every': self.run_every,
+                          'has_run_once': False}
+            rule = blank_rule
 
-        # Set rule to either a blank template or existing rule with same name
-        if not new:
-            for rule in self.rules:
-                if rule['name'] == new_rule['name']:
-                    break
-            else:
-                rule = blank_rule
+            # Set rule to either a blank template or existing rule with same name
+            if not new:
+                for rule in self.rules:
+                    if rule['name'] == new_rule['name']:
+                        break
+                else:
+                    rule = blank_rule
 
-        copy_properties = ['agg_matches',
-                           'current_aggregate_id',
-                           'aggregate_alert_time',
-                           'processed_hits',
-                           'starttime',
-                           'minimum_starttime',
-                           'has_run_once']
+            copy_properties = ['agg_matches',
+                               'current_aggregate_id',
+                               'aggregate_alert_time',
+                               'processed_hits',
+                               'starttime',
+                               'minimum_starttime',
+                               'has_run_once']
             for prop in copy_properties:
                 if prop not in rule:
                     continue
@@ -1293,7 +1293,7 @@ class ElastAlerter(object):
             })
             
             return new_rule
-        
+            
         except Exception as e:
             # Record error on span
             traceproviders.record_error(span, e)

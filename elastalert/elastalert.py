@@ -1040,19 +1040,23 @@ class ElastAlerter(object):
         run_start = time.time()
         
         # Create a root span for this rule execution if tracing is enabled
-        # span = None
-        # try:
-        #     tracer = trace.get_tracer(__name__)
-        #     span = tracer.start_as_current_span("elastalert.run_rule")
-        #     span.set_attribute("rule.name", rule.get('name', 'unknown'))
-        #     span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__)
-        #     span.set_attribute("rule.index", rule.get('index', ''))
-        #     if starttime:
-        #         span.set_attribute("query.starttime", str(starttime))
-        #     span.set_attribute("query.endtime", str(endtime))
-        # except Exception as e:
-        #     # Tracing not available or error creating span
-        #     pass
+        span = None
+        try:
+            tracer = trace.get_tracer(__name__)
+            elastalert_logger.info(f"Creating span for rule: {rule.get('name', 'unknown')}")
+            span = tracer.start_as_current_span("elastalert.run_rule")
+            span.set_attribute("rule.name", rule.get('name', 'unknown'))
+            span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__)
+            span.set_attribute("rule.index", rule.get('index', ''))
+            if starttime:
+                span.set_attribute("query.starttime", str(starttime))
+            span.set_attribute("query.endtime", str(endtime))
+            elastalert_logger.info("Span created successfully")
+        except Exception as e:
+            # Tracing not available or error creating span
+            elastalert_logger.error(f"Error creating span: {e}")
+            import traceback
+            elastalert_logger.error(traceback.format_exc())
         
         num_matches = 0
         self.thread_data.current_es = kibana_adapter_client(rule)
@@ -1188,10 +1192,14 @@ class ElastAlerter(object):
                 elastalert_logger.error("unable to send metrics:\n%s" % str(e))
 
         # End the span if it was created
-        # if span is not None:
-        #     span.set_attribute("rule.num_matches", num_matches)
-        #     span.set_attribute("rule.time_taken", time.time() - run_start)
-        #     span.end()
+        if span is not None:
+            try:
+                span.set_attribute("rule.num_matches", num_matches)
+                span.set_attribute("rule.time_taken", time.time() - run_start)
+                span.end()
+                elastalert_logger.info(f"Span ended for rule: {rule.get('name', 'unknown')}")
+            except Exception as e:
+                elastalert_logger.error(f"Error ending span: {e}")
 
         return num_matches
 

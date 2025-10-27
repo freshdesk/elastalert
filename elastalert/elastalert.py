@@ -106,8 +106,9 @@ class ElastAlerter(object):
     def __init__(self, args):
         # Initialize tracing
         #add log to file
+        elastalert_logger.info("BEFORE: Initializing tracing")
         tracer = init_tracer()
-        elastalert_logger.info("Tracing initialized")
+        elastalert_logger.info("AFTER: Tracing initialized")
         
         
         self.es_clients = {}

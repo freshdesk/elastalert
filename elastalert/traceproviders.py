@@ -35,6 +35,7 @@ def get_host_ip():
     return socket.gethostbyname(socket.gethostname())
 
 def init_tracer():
+    print("Inside init_tracer")
     try:
         # Create resource with service information
         resource = Resource.create({
@@ -77,5 +78,5 @@ def init_tracer():
     except Exception as e:
         logging.getLogger('elastalert').error(f"Failed to initialize tracing: {e}")
     
-    
+
     return trace_provider

@@ -104,14 +104,7 @@ class ElastAlerter(object):
         self.args = parser.parse_args(args)
 
     def __init__(self, args):
-        # Initialize tracing
-        #add log to file
-        print("BEFORE: Initializing tracing")
-        elastalert_logger.info("BEFORE: Initializing tracing")
-        tracer = init_tracer()
-        elastalert_logger.info("AFTER: Tracing initialized")
-        
-        
+        # Parse args and load config FIRST, before initializing tracing
         self.es_clients = {}
         self.parse_args(args)
         self.debug = self.args.debug
@@ -140,6 +133,12 @@ class ElastAlerter(object):
             tracer.addHandler(logging.FileHandler(self.args.es_debug_trace))
 
         self.conf = load_conf(self.args)
+        
+        # Initialize tracing using hardcoded config in traceproviders
+        print("BEFORE: Initializing tracing")
+        elastalert_logger.info("BEFORE: Initializing tracing")
+        tracer = init_tracer()
+        elastalert_logger.info("AFTER: Tracing initialized")
         self.rules_loader = self.conf['rules_loader']
         self.rules = self.rules_loader.load(self.conf, self.args)
 
@@ -207,10 +206,17 @@ class ElastAlerter(object):
         if self.args.silence:
             self.silence()
 
-        current_span = trace.get_current_span()
-        current_span.set_attribute("ATTR1", "ATTR1_VALUE")
-        current_span.set_attribute("ATTR2", "ATTR2_VALUE")
-        current_span.set_attribute("ATTR3", "ATTR3_VALUE")
+        # Try to get current span and set attributes if available
+        # Only works if tracing is enabled and a span exists
+        try:
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                current_span.set_attribute("elastalert.initialized", True)
+                current_span.set_attribute("elastalert.num_rules", len(self.rules))
+                current_span.set_attribute("elastalert.writeback_index", self.writeback_index)
+        except Exception as e:
+            # Tracing not available or no active span
+            pass
 
 
     @staticmethod
@@ -1033,6 +1039,22 @@ class ElastAlerter(object):
         """
         run_start = time.time()
         
+        # Create a root span for this rule execution if tracing is enabled
+        # span = None
+        # try:
+        #     tracer = trace.get_tracer(__name__)
+        #     span = tracer.start_as_current_span("elastalert.run_rule")
+        #     span.set_attribute("rule.name", rule.get('name', 'unknown'))
+        #     span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__)
+        #     span.set_attribute("rule.index", rule.get('index', ''))
+        #     if starttime:
+        #         span.set_attribute("query.starttime", str(starttime))
+        #     span.set_attribute("query.endtime", str(endtime))
+        # except Exception as e:
+        #     # Tracing not available or error creating span
+        #     pass
+        
+        num_matches = 0
         self.thread_data.current_es = kibana_adapter_client(rule)
         self.current_es_addr = (rule['es_host'], rule['es_port'])
 
@@ -1164,6 +1186,12 @@ class ElastAlerter(object):
                     tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
             except BaseException as e:
                 elastalert_logger.error("unable to send metrics:\n%s" % str(e))
+
+        # End the span if it was created
+        # if span is not None:
+        #     span.set_attribute("rule.num_matches", num_matches)
+        #     span.set_attribute("rule.time_taken", time.time() - run_start)
+        #     span.end()
 
         return num_matches
 

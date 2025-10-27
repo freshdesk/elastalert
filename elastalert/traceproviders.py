@@ -19,6 +19,7 @@ import logging
 
 config = {
     'enabled': True,
+    # OTLP gRPC exporter endpoint (port 4317 for gRPC, 4318 for HTTP)
     'otel_exporter_endpoint': 'trace-shipper.trace-shipper:55680',
     'otel_sdk_version': '1.21.0',
     'trace_service_name': 'elastalert',
@@ -36,10 +37,16 @@ def get_host_ip():
 
 def init_tracer():
     print("Inside init_tracer")
+    # Check if tracing is enabled
+    if not config.get('enabled', True):
+        logging.getLogger('elastalert').info("Tracing is disabled in configuration")
+        return None
+    
+    trace_provider = None
     try:
         # Create resource with service information
         resource = Resource.create({
-            ResourceAttributes.SERVICE_NAME: config.get('trace_service_name'),
+            ResourceAttributes.SERVICE_NAME: config.get('trace_service_name', 'elastalert'),
             ResourceAttributes.TELEMETRY_SDK_NAME: telemetry_sdk_name,
             ResourceAttributes.TELEMETRY_SDK_LANGUAGE: "python",
             ResourceAttributes.TELEMETRY_SDK_VERSION: config.get('otel_sdk_version', '1.25.0'),
@@ -50,7 +57,7 @@ def init_tracer():
         # Create OTLP exporter
         otlp_exporter = OTLPSpanExporter(
             endpoint=config.get('otel_exporter_endpoint', 'http://localhost:4317'),
-            insecure=True  # Note: Use secure connections in production
+            insecure=True
         )
 
         # Create tracer provider with sampling
@@ -77,6 +84,9 @@ def init_tracer():
 
     except Exception as e:
         logging.getLogger('elastalert').error(f"Failed to initialize tracing: {e}")
+        import traceback
+        logging.getLogger('elastalert').error(traceback.format_exc())
+        trace_provider = None
     
 
     return trace_provider

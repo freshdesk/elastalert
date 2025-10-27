@@ -46,6 +46,10 @@ from elastalert.util import (add_raw_postfix, cronite_datetime_to_timestamp, dt_
                              should_scrolling_continue, total_seconds, ts_add, ts_now, ts_to_dt, unix_to_dt,
                              ts_utc_to_tz, dt_to_ts_with_format)
 
+from elastalert.traceproviders import init_tracer
+from opentelemetry import trace
+from opentelemetry.semconv.trace import SpanAttributes
+
 
 class ElastAlerter(object):
     """ The main ElastAlert runner. This class holds all state about active rules,
@@ -100,6 +104,12 @@ class ElastAlerter(object):
         self.args = parser.parse_args(args)
 
     def __init__(self, args):
+        # Initialize tracing
+        #add log to file
+        tracer = init_tracer()
+        elastalert_logger.info("Tracing initialized")
+        
+        
         self.es_clients = {}
         self.parse_args(args)
         self.debug = self.args.debug
@@ -194,6 +204,12 @@ class ElastAlerter(object):
 
         if self.args.silence:
             self.silence()
+
+
+        tracer.set_attribute("ATTR4", "ATTR4_VALUE")
+        tracer.set_attribute("ATTR5", "ATTR5_VALUE")
+        tracer.set_attribute("ATTR6", "ATTR6_VALUE")
+
 
     @staticmethod
     def get_index(rule, starttime=None, endtime=None):

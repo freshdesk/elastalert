@@ -63,14 +63,19 @@ def init_tracer():
         )
         logging.getLogger('elastalert').info("OpenTelemetry tracing initialized successfully")
 
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        trace_provider.add_span_processor(span_processor)
+
+        # Set global tracer provider
+        trace.set_tracer_provider(trace_provider)
+
+        # Create tracer instance
+        tracer = trace.get_tracer("elastalert-service")
+
+        logging.getLogger('elastalert').info("OpenTelemetry tracing initialized successfully")
 
     except Exception as e:
         logging.getLogger('elastalert').error(f"Failed to initialize tracing: {e}")
     
-    tracer = trace.get_tracer(__name__)
-
-    tracer.start_as_current_span("elastalert_main")
-    tracer.set_attribute("ATTR1", "ATTR1_VALUE")
-    tracer.set_attribute("ATTR2", "ATTR2_VALUE")
-    tracer.set_attribute("ATTR3", "ATTR3_VALUE")
-    return tracer
+    
+    return trace_provider

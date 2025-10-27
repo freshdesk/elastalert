@@ -205,10 +205,10 @@ class ElastAlerter(object):
         if self.args.silence:
             self.silence()
 
-
-        tracer.set_attribute("ATTR4", "ATTR4_VALUE")
-        tracer.set_attribute("ATTR5", "ATTR5_VALUE")
-        tracer.set_attribute("ATTR6", "ATTR6_VALUE")
+        current_span = trace.get_current_span()
+        current_span.set_attribute("ATTR1", "ATTR1_VALUE")
+        current_span.set_attribute("ATTR2", "ATTR2_VALUE")
+        current_span.set_attribute("ATTR3", "ATTR3_VALUE")
 
 
     @staticmethod

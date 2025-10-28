@@ -206,22 +206,11 @@ class ElastAlerter(object):
         if self.args.silence:
             self.silence()
 
+        # Tracing tracer instance - available for instance methods
         self.tracer = trace.get_tracer(__name__)
-        # Try to get current span and set attributes if available
-        # Only works if tracing is enabled and a span exists
-        with self.tracer.start_as_current_span("span-1"):
-            ctx = trace.get_current_span().get_span_context()
-            link_from_span_1 = trace.Link(ctx)
-
-
 
     @staticmethod
     def get_index(rule, starttime=None, endtime=None):
-
-        with self.tracer.start_as_current_span("span-2", links=[link_from_span_1]):
-            ctx = trace.get_current_span().get_span_context()
-            link_from_span_2 = trace.Link(ctx)
-        
         """ Gets the index for a rule. If strftime is set and starttime and endtime
         are provided, it will return a comma seperated list of indices. If strftime
         is set but starttime and endtime are not provided, it will replace all format
@@ -250,11 +239,7 @@ class ElastAlerter(object):
         :param sort: If true, sort results by timestamp. (Default True)
         :return: A query dictionary to pass to Elasticsearch.
         """
-
-        with self.tracer.start_as_current_span("span-3", links=[link_from_span_2]):
-            ctx = trace.get_current_span().get_span_context()
-            link_from_span_3 = trace.Link(ctx)
-            
+        
 
         starttime = to_ts_func(starttime)
         endtime = to_ts_func(endtime)
@@ -412,6 +397,16 @@ class ElastAlerter(object):
         :return: A list of hits, bounded by rule['max_query_size'] (or self.max_query_size).
         """
 
+        span = None
+        try:
+            tracer = trace.get_tracer(__name__)
+            span = tracer.start_as_current_span("elastalert.get_hits")
+            span.set_attribute("query.index", index)
+            span.set_attribute("query.starttime", str(starttime))
+            span.set_attribute("query.endtime", str(endtime))
+        except Exception as e:
+            pass
+
         query = self.get_query(
             rule['filter'],
             starttime,
@@ -484,8 +479,9 @@ class ElastAlerter(object):
         else:
             elastalert_logger.info(status_log)
 
-        hits = self.process_hits(rule, hits)
-        return hits
+            hits = self.process_hits(rule, hits)
+            return hits
+
 
     
     def get_terms_data(self,rule, starttime, endtime):
@@ -788,77 +784,94 @@ class ElastAlerter(object):
         :param end: The latest time to query.
         Returns True on success and False on failure.
         """
-        if start is None:
-            start = self.get_index_start(rule['index'])
-        if end is None:
-            end = ts_now()
+        # Create a child span for run_query
+        span = None
+        try:
+            tracer = trace.get_tracer(__name__)
+            span = tracer.start_as_current_span("elastalert.run_query")
+            span.set_attribute("rule.name", rule.get('name', 'unknown'))
+            if start:
+                span.set_attribute("query.starttime", str(start))
+            if end:
+                span.set_attribute("query.endtime", str(end))
+        except Exception as e:
+            pass
+        
+        try:
+            if start is None:
+                start = self.get_index_start(rule['index'])
+            if end is None:
+                end = ts_now()
 
-        if rule.get('query_timezone'):
-            elastalert_logger.info("Query start and end time converting UTC to query_timezone : {}".format(rule.get('query_timezone')))
-            start = ts_utc_to_tz(start, rule.get('query_timezone'))
-            end = ts_utc_to_tz(end, rule.get('query_timezone'))
-        # Reset hit counter and query
-        rule_inst = rule['type']
-        rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
-        index = self.get_index(rule, start, end)
-        if isinstance(rule_inst, NewTermsRule):
-            data = self.get_terms_data(rule, start, end)
-        elif rule.get('use_count_query'):
-            data = self.get_hits_count(rule, start, end, index)
-        elif rule.get('use_terms_query'):
-            data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
-        elif isinstance(rule_inst, ErrorRateRule):
-            data = self.get_error_rate(rule, start, end)
-        elif rule.get('aggregation_query_element'):
-            elastalert_logger.info("in agg query element")
-            if isinstance(rule_inst, AdvancedQueryRule):
-                data = self.get_adv_query_aggregation(rule, start, end,index)
-            else:
-                data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
-
-        else:
-            data = self.get_hits(rule, start, end, index, scroll)
-            if data:
-                old_len = len(data)
-                data = self.remove_duplicate_events(data, rule)
-                self.thread_data.num_dupes += old_len - len(data)
-
-        # There was an exception while querying
-        if data is None:
-            return False
-        elif data:
+            if rule.get('query_timezone'):
+                elastalert_logger.info("Query start and end time converting UTC to query_timezone : {}".format(rule.get('query_timezone')))
+                start = ts_utc_to_tz(start, rule.get('query_timezone'))
+                end = ts_utc_to_tz(end, rule.get('query_timezone'))
+            # Reset hit counter and query
+            rule_inst = rule['type']
+            rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
+            index = self.get_index(rule, start, end)
+            
             if isinstance(rule_inst, NewTermsRule):
-                rule_inst.add_terms_data(data)
+                data = self.get_terms_data(rule, start, end)
             elif rule.get('use_count_query'):
-                rule_inst.add_count_data(data)
+                data = self.get_hits_count(rule, start, end, index)
             elif rule.get('use_terms_query'):
-                rule_inst.add_terms_data(data)
+                data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
             elif isinstance(rule_inst, ErrorRateRule):
-                rule_inst.calculate_err_rate(data)
+                data = self.get_error_rate(rule, start, end)
             elif rule.get('aggregation_query_element'):
-                rule_inst.add_aggregation_data(data)
+                elastalert_logger.info("in agg query element")
+                if isinstance(rule_inst, AdvancedQueryRule):
+                    data = self.get_adv_query_aggregation(rule, start, end,index)
+                else:
+                    data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
             else:
-                rule_inst.add_data(data)
+                data = self.get_hits(rule, start, end, index, scroll)
+                if data:
+                    old_len = len(data)
+                    data = self.remove_duplicate_events(data, rule)
+                    self.thread_data.num_dupes += old_len - len(data)
 
+            # There was an exception while querying
+            if data is None:
+                return False
+            elif data:
+                if isinstance(rule_inst, NewTermsRule):
+                    rule_inst.add_terms_data(data)
+                elif rule.get('use_count_query'):
+                    rule_inst.add_count_data(data)
+                elif rule.get('use_terms_query'):
+                    rule_inst.add_terms_data(data)
+                elif isinstance(rule_inst, ErrorRateRule):
+                    rule_inst.calculate_err_rate(data)
+                elif rule.get('aggregation_query_element'):
+                    rule_inst.add_aggregation_data(data)
+                else:
+                    rule_inst.add_data(data)
 
-        #Removed scrolling as in old elastalert
+                #Removed scrolling as in old elastalert
+                # try:
+                #     if rule.get('scroll_id') and self.thread_data.num_hits < self.thread_data.total_hits and should_scrolling_continue(rule):
+                #         if not self.run_query(rule, start, end, scroll=True):
+                #             return False
+                # except RuntimeError:
+                #     # It's possible to scroll far enough to hit max recursive depth
+                #     pass
+                # if 'scroll_id' in rule:
+                #     scroll_id = rule.pop('scroll_id')
+                #     try:
+                #         self.thread_data.current_es.clear_scroll(scroll_id=scroll_id)
+                #     except NotFoundError:
+                #         pass
 
-        # try:
-        #     if rule.get('scroll_id') and self.thread_data.num_hits < self.thread_data.total_hits and should_scrolling_continue(rule):
-        #         if not self.run_query(rule, start, end, scroll=True):
-        #             return False
-        # except RuntimeError:
-        #     # It's possible to scroll far enough to hit max recursive depth
-        #     pass
-
-        # if 'scroll_id' in rule:
-        #     scroll_id = rule.pop('scroll_id')
-        #     try:
-        #         self.thread_data.current_es.clear_scroll(scroll_id=scroll_id)
-        #     except NotFoundError:
-        #         pass
-
-        return True
+                return True
+        finally:
+            if span is not None:
+                try:
+                    span.end()
+                except:
+                    pass
 
     def get_starttime(self, rule):
         """ Query ES for the last time we ran this rule.
@@ -1047,26 +1060,40 @@ class ElastAlerter(object):
         run_start = time.time()
         
         # Create a root span for this rule execution if tracing is enabled
-        span = None
+        # Use context manager to automatically propagate context to child methods
         try:
             tracer = trace.get_tracer(__name__)
             elastalert_logger.info(f"Creating span for rule: {rule.get('name', 'unknown')}")
-            # Start span - this returns the actual span object
-            span = tracer.start_span("elastalert.run_rule")
-            # Set attributes on the span
-            span.set_attribute("rule.name", rule.get('name', 'unknown'))
-            span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__)
-            span.set_attribute("rule.index", rule.get('index', ''))
-            if starttime:
-                span.set_attribute("query.starttime", str(starttime))
-            span.set_attribute("query.endtime", str(endtime))
-            elastalert_logger.info("Span created successfully")
+            # Use start_as_current_span to propagate context
+            with tracer.start_as_current_span("elastalert.run_rule") as span:
+                # Set attributes on the span
+                span.set_attribute("rule.name", rule.get('name', 'unknown'))
+                span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__)
+                span.set_attribute("rule.index", rule.get('index', ''))
+                if starttime:
+                    span.set_attribute("query.starttime", str(starttime))
+                span.set_attribute("query.endtime", str(endtime))
+                elastalert_logger.info("Span created successfully")
+                
+                # Now call all the methods - they will create child spans automatically
+                num_matches = self._run_rule_impl(rule, endtime, starttime, run_start)
+                
+                # Set final attributes
+                span.set_attribute("rule.num_matches", num_matches)
+                span.set_attribute("rule.time_taken", time.time() - run_start)
+                elastalert_logger.info(f"Span ending for rule: {rule.get('name', 'unknown')}")
+                
+                return num_matches
         except Exception as e:
             # Tracing not available or error creating span
             elastalert_logger.error(f"Error creating span: {e}")
             import traceback
             elastalert_logger.error(traceback.format_exc())
-        
+            # Fallback without tracing
+            return self._run_rule_impl(rule, endtime, starttime, run_start)
+    
+    def _run_rule_impl(self, rule, endtime, starttime, run_start):
+        """ Internal implementation of run_rule without tracing overhead """
         num_matches = 0
         self.thread_data.current_es = kibana_adapter_client(rule)
         self.current_es_addr = (rule['es_host'], rule['es_port'])
@@ -1199,16 +1226,6 @@ class ElastAlerter(object):
                     tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
             except BaseException as e:
                 elastalert_logger.error("unable to send metrics:\n%s" % str(e))
-
-        # End the span if it was created
-        if span is not None:
-            try:
-                span.set_attribute("rule.num_matches", num_matches)
-                span.set_attribute("rule.time_taken", time.time() - run_start)
-                elastalert_logger.info(f"Span ending for rule: {rule.get('name', 'unknown')}")
-                span.end()
-            except Exception as e:
-                elastalert_logger.error(f"Error ending span: {e}")
 
         return num_matches
 
@@ -1557,10 +1574,26 @@ class ElastAlerter(object):
 
     def alert(self, matches, rule, alert_time=None, retried=False):
         """ Wraps alerting, Kibana linking and enhancements in an exception handler """
+        # Create a child span for alert
+        span = None
+        try:
+            tracer = trace.get_tracer(__name__)
+            span = tracer.start_as_current_span("elastalert.alert")
+            span.set_attribute("rule.name", rule.get('name', 'unknown'))
+            span.set_attribute("alert.match_count", len(matches))
+        except Exception as e:
+            pass
+        
         try:
             return self.send_alert(matches, rule, alert_time=alert_time, retried=retried)
         except Exception as e:
             self.handle_uncaught_exception(e, rule)
+        finally:
+            if span is not None:
+                try:
+                    span.end()
+                except:
+                    pass
 
     def send_alert(self, matches, rule, alert_time=None, retried=False):
         """ Send out an alert.

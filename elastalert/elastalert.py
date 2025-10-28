@@ -1781,7 +1781,6 @@ class ElastAlerter(object):
         try:
             #modded for elasticsearch ver 6 library compatibility
             res = self.writeback_es.search(index=self.writeback_index,
-                                           doc_type='elastalert',
                                            body=query,
                                            size=1)
             if len(res['hits']['hits']) == 0:

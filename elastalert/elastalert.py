@@ -1044,7 +1044,9 @@ class ElastAlerter(object):
         try:
             tracer = trace.get_tracer(__name__)
             elastalert_logger.info(f"Creating span for rule: {rule.get('name', 'unknown')}")
-            span = tracer.start_as_current_span("elastalert.run_rule")
+            # Start span - this returns the actual span object
+            span = tracer.start_span("elastalert.run_rule")
+            # Set attributes on the span
             span.set_attribute("rule.name", rule.get('name', 'unknown'))
             span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__)
             span.set_attribute("rule.index", rule.get('index', ''))
@@ -1196,8 +1198,8 @@ class ElastAlerter(object):
             try:
                 span.set_attribute("rule.num_matches", num_matches)
                 span.set_attribute("rule.time_taken", time.time() - run_start)
+                elastalert_logger.info(f"Span ending for rule: {rule.get('name', 'unknown')}")
                 span.end()
-                elastalert_logger.info(f"Span ended for rule: {rule.get('name', 'unknown')}")
             except Exception as e:
                 elastalert_logger.error(f"Error ending span: {e}")
 

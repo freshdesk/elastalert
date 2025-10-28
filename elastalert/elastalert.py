@@ -206,21 +206,22 @@ class ElastAlerter(object):
         if self.args.silence:
             self.silence()
 
+        self.tracer = trace.get_tracer(__name__)
         # Try to get current span and set attributes if available
         # Only works if tracing is enabled and a span exists
-        try:
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                current_span.set_attribute("elastalert.initialized", True)
-                current_span.set_attribute("elastalert.num_rules", len(self.rules))
-                current_span.set_attribute("elastalert.writeback_index", self.writeback_index)
-        except Exception as e:
-            # Tracing not available or no active span
-            pass
+        with self.tracer.start_as_current_span("span-1"):
+            ctx = trace.get_current_span().get_span_context()
+            link_from_span_1 = trace.Link(ctx)
+
 
 
     @staticmethod
     def get_index(rule, starttime=None, endtime=None):
+
+        with self.tracer.start_as_current_span("span-2", links=[link_from_span_1]):
+            ctx = trace.get_current_span().get_span_context()
+            link_from_span_2 = trace.Link(ctx)
+        
         """ Gets the index for a rule. If strftime is set and starttime and endtime
         are provided, it will return a comma seperated list of indices. If strftime
         is set but starttime and endtime are not provided, it will replace all format
@@ -249,6 +250,12 @@ class ElastAlerter(object):
         :param sort: If true, sort results by timestamp. (Default True)
         :return: A query dictionary to pass to Elasticsearch.
         """
+
+        with self.tracer.start_as_current_span("span-3", links=[link_from_span_2]):
+            ctx = trace.get_current_span().get_span_context()
+            link_from_span_3 = trace.Link(ctx)
+            
+
         starttime = to_ts_func(starttime)
         endtime = to_ts_func(endtime)
         filters = copy.copy(filters)

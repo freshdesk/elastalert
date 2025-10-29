@@ -674,6 +674,7 @@ class ElastAlerter(object):
         self.thread_data.num_hits += (res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
         return {endtime: payload}
     
+    @trace_span("elastalert.get_adv_query_aggregation")
     def get_adv_query_aggregation(self, rule, starttime, endtime, index, term_size=None):
         rule_filter = copy.copy(rule['filter'])
         base_query = self.get_query(
@@ -701,6 +702,7 @@ class ElastAlerter(object):
         return {endtime: payload}
 
 
+    @trace_span("elastalert.get_error_rate")
     #trace_alert specific error rate method
     def get_error_rate(self, rule, starttime, endtime):
         agg_key = '{}({})'.format(rule['total_agg_type'],rule['total_agg_key'])
@@ -734,12 +736,15 @@ class ElastAlerter(object):
         
         return {endtime: payload}
 
+    @trace_span("elastalert.get_query_string")
     #method used by get_error_rate
     def get_query_string(self, rule):
         if rule['filter'] and ('query_string' in rule['filter'][0]['query']) and ('query' in rule['filter'][0]['query']['query_string']):
             return rule['filter'][0]['query']['query_string']['query']
         return ""
 
+
+    @trace_span("elastalert.get_ch_data")
     #method used by get_error_rate for calculating aggregates from ch data using query_endpoint
     def get_ch_data(self, rule, starttime, endtime, agg_key, freshquery,aggregation):
         data = {
@@ -768,6 +773,8 @@ class ElastAlerter(object):
         # res = requests.post(self.query_endpoint, json=data)
         # return None, None
     
+ 
+    @trace_span("elastalert.remove_duplicate_events")
     def remove_duplicate_events(self, data, rule):
         new_events = []
         for event in data:
@@ -780,6 +787,8 @@ class ElastAlerter(object):
 
         return new_events
 
+
+    @trace_span("elastalert.remove_old_events")
     def remove_old_events(self, rule):
         # Anything older than the buffer time we can forget
         now = ts_now()
@@ -794,6 +803,7 @@ class ElastAlerter(object):
             if now - timestamp > buffer_time:
                 remove.append(_id)
         list(map(rule['processed_hits'].pop, remove))
+
 
     @trace_span("elastalert.run_query")
     def run_query(self, rule, start=None, end=None, scroll=False):
@@ -876,6 +886,7 @@ class ElastAlerter(object):
 
         return True
 
+    @trace_span("elastalert.get_starttime")
     def get_starttime(self, rule):
         """ Query ES for the last time we ran this rule.
 
@@ -903,6 +914,8 @@ class ElastAlerter(object):
         except (ElasticsearchException, KeyError) as e:
             self.handle_error('Error querying for last run: %s' % (e), {'rule': rule['name']})
 
+
+    @trace_span("elastalert.set_starttime")
     def set_starttime(self, rule, endtime):
         """ Given a rule and an endtime, sets the appropriate starttime for it. """
         # This means we are starting fresh
@@ -946,6 +959,8 @@ class ElastAlerter(object):
                 #Based on PR 3141 old Yelp/elastalert - rschirin
                 rule['starttime'] = endtime - rule['timeframe']
 
+
+    @trace_span("elastalert.adjust_start_time_for_overlapping_agg_query")
     def adjust_start_time_for_overlapping_agg_query(self, rule):
         if rule.get('aggregation_query_element'):
             if rule.get('allow_buffer_time_overlap') and not rule.get('use_run_every_query_size') and (
@@ -953,6 +968,8 @@ class ElastAlerter(object):
                 rule['starttime'] = rule['starttime'] - (rule['buffer_time'] - rule['run_every'])
                 rule['original_starttime'] = rule['starttime']
 
+
+    @trace_span("elastalert.adjust_start_time_for_interval_sync")
     def adjust_start_time_for_interval_sync(self, rule, endtime):
         # If aggregation query adjust bucket offset
         if rule.get('aggregation_query_element'):
@@ -969,6 +986,7 @@ class ElastAlerter(object):
                 else:
                     rule['bucket_offset_delta'] = offset
 
+    @trace_span("elastalert.get_segment_size")
     def get_segment_size(self, rule):
         """ The segment size is either buffer_size for queries which can overlap or run_every for queries
         which must be strictly separate. This mimicks the query size for when ElastAlert is running continuously. """
@@ -982,6 +1000,8 @@ class ElastAlerter(object):
         else:
             return self.run_every
 
+
+    @trace_span("elastalert.get_query_key_value")
     def get_query_key_value(self, rule, match):
         # get the value for the match's query_key (or none) to form the key used for the silence_cache.
         # Flatline ruletype sets "key" instead of the actual query_key
@@ -989,10 +1009,13 @@ class ElastAlerter(object):
             return str(match['key'])
         return self.get_named_key_value(rule, match, 'query_key')
 
+
+    @trace_span("elastalert.get_aggregation_key_value")
     def get_aggregation_key_value(self, rule, match):
         # get the value for the match's aggregation_key (or none) to form the key used for grouped aggregates.
         return self.get_named_key_value(rule, match, 'aggregation_key')
 
+    @trace_span("elastalert.get_named_key_value")
     def get_named_key_value(self, rule, match, key_name):
         # search the match for the key specified in the rule to get the value
         if key_name in rule:
@@ -1011,6 +1034,8 @@ class ElastAlerter(object):
 
         return key_value
 
+
+    @trace_span("elastalert.enhance_filter")
     def enhance_filter(self, rule):
         """ If there is a blacklist or whitelist in rule then we add it to the filter.
         It adds it as a query_string. If there is already an query string its is appended
@@ -1044,6 +1069,8 @@ class ElastAlerter(object):
         filters.append(query_str_filter)
         elastalert_logger.debug("Enhanced filter with {} terms: {}".format(listname, str(query_str_filter)))
 
+
+    @trace_span("elastalert.get_elasticsearch_client")
     def get_elasticsearch_client(self, rule):
         key = rule['name']
         es_client = self.es_clients.get(key)
@@ -1052,6 +1079,8 @@ class ElastAlerter(object):
             self.es_clients[key] = es_client
         return es_client
 
+
+    @trace_span("elastalert.run_rule")
     def run_rule(self, rule, endtime, starttime=None):
         """ Run a rule for a given time period, including querying and alerting on results.
 
@@ -1211,6 +1240,8 @@ class ElastAlerter(object):
             
             return num_matches
 
+
+    @trace_span("elastalert.init_rule")
     def init_rule(self, new_rule, new=True):
         ''' Copies some necessary non-config state from an exiting rule to a new rule. '''
         if not new and self.scheduler.get_job(job_id=new_rule['name']):
@@ -1268,6 +1299,8 @@ class ElastAlerter(object):
 
         return new_rule
 
+
+    @trace_span("elastalert.load_rule_changes")
     def load_rule_changes(self):
         """ Using the modification times of rule config files, syncs the running rules
             to match the files in rules_folder by removing, adding or reloading rules. """
@@ -1357,6 +1390,8 @@ class ElastAlerter(object):
 
         self.rule_hashes = new_rule_hashes
 
+
+    @trace_span("elastalert.start")
     def start(self):
         """ Periodically go through each rule and run it """
         if self.starttime:
@@ -1404,6 +1439,8 @@ class ElastAlerter(object):
             sleep_duration = total_seconds(next_run - datetime.datetime.utcnow())
             self.sleep_for(sleep_duration)
 
+
+    @trace_span("elastalert.wait_until_responsive")
     def wait_until_responsive(self, timeout, clock=timeit.default_timer):
         """Wait until ElasticSearch becomes responsive (or too much time passes)."""
 
@@ -1438,6 +1475,8 @@ class ElastAlerter(object):
             )
         exit(1)
 
+
+    @trace_span("elastalert.run_all_rules")
     def run_all_rules(self):
         """ Run each rule one time """
         self.handle_pending_alerts()
@@ -1447,18 +1486,24 @@ class ElastAlerter(object):
 
         self.handle_config_change()
 
+
+    @trace_span("elastalert.handle_pending_alerts")
     def handle_pending_alerts(self):
         self.thread_data.alerts_sent = 0
         self.send_pending_alerts()
         elastalert_logger.info("Background alerts thread %s pending alerts sent at %s" % (
             self.thread_data.alerts_sent, pretty_ts(ts_now(), ts_format=self.pretty_ts_format)))
 
+
+    @trace_span("elastalert.handle_config_change")
     def handle_config_change(self):
         if not self.args.pin_rules:
             self.load_rule_changes()
             elastalert_logger.info(
                 "Background configuration change check run at %s" % (pretty_ts(ts_now(), ts_format=self.pretty_ts_format)))
 
+
+    @trace_span("elastalert.handle_rule_execution")
     def handle_rule_execution(self, rule):
         self.thread_data.alerts_sent = 0
         next_run = datetime.datetime.utcnow() + rule['run_every']
@@ -1530,6 +1575,8 @@ class ElastAlerter(object):
 
         self.reset_rule_schedule(rule)
 
+
+    @trace_span("elastalert.reset_rule_schedule")
     def reset_rule_schedule(self, rule):
         # We hit the end of a execution schedule, pause ourselves until next run
         if rule.get('limit_execution') and rule['next_starttime']:
@@ -1655,6 +1702,8 @@ class ElastAlerter(object):
             if res and not agg_id:
                 agg_id = res['_id']
 
+
+    @trace_span("elastalert.get_alert_body")
     def get_alert_body(self, match, rule, alert_sent, alert_time, alert_exception=None):
         body = {
             'match_body': match,
@@ -1684,6 +1733,8 @@ class ElastAlerter(object):
             body['alert_exception'] = alert_exception
         return body
 
+
+    @trace_span("elastalert.get_kibana_discover_external_url_formatter")
     def get_kibana_discover_external_url_formatter(self, rule):
         """ Gets or create the external url formatter for kibana discover links """
         key = '__kibana_discover_external_url_formatter__'
@@ -1695,6 +1746,8 @@ class ElastAlerter(object):
             rule[key] = formatter
         return formatter
 
+
+    @trace_span("elastalert.writeback")
     def writeback(self, doc_type, body, rule=None, match_body=None):
         # ES 2.0 - 2.3 does not support dots in field names.
         if self.replace_dots_in_field_names:
@@ -1721,6 +1774,8 @@ class ElastAlerter(object):
         except ElasticsearchException as e:
             elastalert_logger.exception("Error writing alert info to Elasticsearch: %s" % (e))
 
+
+    @trace_span("elastalert.find_recent_pending_alerts")
     def find_recent_pending_alerts(self, time_limit):
         """ Queries writeback_es to find alerts that did not send
         and are newer than time_limit """
@@ -1857,6 +1912,8 @@ class ElastAlerter(object):
 
         return res['hits']['hits'][0]
 
+
+    @trace_span("elastalert.add_aggregated_alert")
     def add_aggregated_alert(self, match, rule):
         """ Save a match as a pending aggregate alert to Elasticsearch. """
 
@@ -1966,6 +2023,7 @@ class ElastAlerter(object):
 
         elastalert_logger.info('Success. %s will be silenced until %s' % (silence_cache_key, silence_ts))
 
+    @trace_span("elastalert.set_realert")
     def set_realert(self, silence_cache_key, timestamp, exponent):
         """ Write a silence to Elasticsearch for silence_cache_key until timestamp. """
         body = {'exponent': exponent,
@@ -1976,6 +2034,8 @@ class ElastAlerter(object):
         self.silence_cache[silence_cache_key] = (timestamp, exponent)
         return self.writeback('silence', body)
 
+
+    @trace_span("elastalert.is_silenced")
     def is_silenced(self, rule_name):
         """ Checks if rule_name is currently silenced. Returns false on exception. """
         if rule_name in self.silence_cache:
@@ -2099,6 +2159,7 @@ class ElastAlerter(object):
 
         return all_counts
 
+    @trace_span("elastalert.next_alert_time")
     def next_alert_time(self, rule, name, timestamp):
         """ Calculate an 'until' time and exponent based on how much past the last 'until' we are. """
         if name in self.silence_cache:

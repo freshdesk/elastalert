@@ -36,7 +36,6 @@ def get_host_ip():
     return socket.gethostbyname(socket.gethostname())
 
 def init_tracer():
-    print("Inside init_tracer")
     logger = logging.getLogger('elastalert')
     
     # Check if tracing is enabled
@@ -44,7 +43,8 @@ def init_tracer():
         logger.info("Tracing is disabled in configuration")
         return None
     
-    trace_provider = None
+
+    tracer = None
     try:
         endpoint = config.get('otel_exporter_endpoint', 'http://localhost:4317')
         logger.info(f"Initializing OpenTelemetry tracer with endpoint: {endpoint}")
@@ -59,16 +59,7 @@ def init_tracer():
             ResourceAttributes.HOST_ID: get_host_ip(),  # Using HOST_ID for IP address
         })
 
-        logger.info(f"Creating OTLP exporter with endpoint: {endpoint}")
-        # Create OTLP exporter
-        otlp_exporter = OTLPSpanExporter(
-            endpoint=endpoint,
-            insecure=True
-        )
-        logger.info("OTLP exporter created successfully")
 
-        # Create tracer provider with sampling
-        logger.info("Creating TracerProvider")
         trace_provider = TracerProvider(
             resource=resource,
             sampler=ParentBased(
@@ -78,25 +69,40 @@ def init_tracer():
             )
         )
 
-        logger.info("Adding BatchSpanProcessor")
+        # Create OTLP exporter
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=endpoint,
+            insecure=True
+        )
+
         span_processor = BatchSpanProcessor(otlp_exporter)
+
+
         trace_provider.add_span_processor(span_processor)
 
-        # Set global tracer provider
-        logger.info("Setting global tracer provider")
         trace.set_tracer_provider(trace_provider)
 
-        # Create tracer instance
-        logger.info("Creating tracer instance")
         tracer = trace.get_tracer("elastalert-service")
 
-        logger.info("OpenTelemetry tracing initialized successfully with endpoint: %s" % endpoint)
+
+        return tracer
+
+
+
+        # # Set global tracer provider
+        # logger.info("Setting global tracer provider")
+
+        # # Create tracer instance
+        # logger.info("Creating tracer instance")
+        # tracer = trace.get_tracer("elastalert-service")
+
+        # logger.info("OpenTelemetry tracing initialized successfully with endpoint: %s" % endpoint)
 
     except Exception as e:
         logging.getLogger('elastalert').error(f"Failed to initialize tracing: {e}")
         import traceback
         logging.getLogger('elastalert').error(traceback.format_exc())
-        trace_provider = None
+        tracer = None
     
 
-    return trace_provider
+    return tracer

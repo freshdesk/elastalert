@@ -203,8 +203,6 @@ class ElastAlerter(object):
             self.silence()
 
 
-    tracer = init_tracer()
-    @tracer.start_as_current_span("elastalert.get_index")
     @staticmethod
     def get_index(rule, starttime=None, endtime=None):
         """ Gets the index for a rule. If strftime is set and starttime and endtime
@@ -225,8 +223,6 @@ class ElastAlerter(object):
             return index
 
 
-    tracer = init_tracer()
-    @tracer.start_as_current_span("get_query")
     @staticmethod
     def get_query(filters, starttime=None, endtime=None, sort=True, timestamp_field='@timestamp', to_ts_func=dt_to_ts, desc=False):
         """ Returns a query dict that will apply a list of filters, filter by
@@ -344,8 +340,6 @@ class ElastAlerter(object):
         return res['hits']['hits'][0][timestamp_field]
 
 
-    tracer = init_tracer()
-    @tracer.start_as_current_span("process_hits")
     @staticmethod
     def process_hits(rule, hits):
         """ Update the _source field for each hit received from ES based on the rule configuration.

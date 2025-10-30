@@ -63,17 +63,46 @@ def get_tracer():
     return _global_tracer
 
 def trace_span(span_name):
-    """Decorator to automatically create a span for a method"""
+    """Decorator to automatically create a span for a method (works with both instance and static methods)
+    
+    Usage:
+        # For instance methods:
+        @trace_span("method.name")
+        def instance_method(self, ...):
+            ...
+        
+        # For static methods (apply trace_span BEFORE @staticmethod):
+        @trace_span("method.name")
+        @staticmethod
+        def static_method(...):
+            ...
+    """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             tracer = get_tracer()
             with tracer.start_as_current_span(span_name) as span:
                 try:
-                    # Try to set some attributes if available
-                    if args and hasattr(args[0], '__class__'):
-                        span.set_attribute("method.class", args[0].__class__.__name__)
+                    # Set method name attribute
                     span.set_attribute("method.name", func.__name__)
+                    
+                    # Try to detect if this is an instance method or static method
+                    # For instance methods, args[0] is 'self' (an instance of the class)
+                    # For static methods, args might be empty or args[0] is a regular parameter
+                    if args:
+                        first_arg = args[0]
+                        # Check if first argument is 'self' (instance method)
+                        # by seeing if it's an instance of a class and has the method
+                        if hasattr(first_arg, '__class__'):
+                            class_name = first_arg.__class__.__name__
+                            # Check if this method exists as an instance method on the class
+                            if hasattr(first_arg, func.__name__):
+                                # Likely an instance method
+                                span.set_attribute("method.class", class_name)
+                            else:
+                                # Might be a static method with an object as first parameter
+                                # Still record the class if it's an object
+                                span.set_attribute("method.class", class_name)
                     
                     return func(*args, **kwargs)
                 except Exception as e:
@@ -243,6 +272,7 @@ class ElastAlerter(object):
             self.silence()
 
 
+    @trace_span("elastalert.get_index")
     @staticmethod
     def get_index(rule, starttime=None, endtime=None):
         """ Gets the index for a rule. If strftime is set and starttime and endtime
@@ -263,6 +293,7 @@ class ElastAlerter(object):
             return index
 
 
+    @trace_span("elastalert.get_query")
     @staticmethod
     def get_query(filters, starttime=None, endtime=None, sort=True, timestamp_field='@timestamp', to_ts_func=dt_to_ts, desc=False):
         """ Returns a query dict that will apply a list of filters, filter by
@@ -380,6 +411,7 @@ class ElastAlerter(object):
         return res['hits']['hits'][0][timestamp_field]
 
 
+    @trace_span("elastalert.process_hits")
     @staticmethod
     def process_hits(rule, hits):
         """ Update the _source field for each hit received from ES based on the rule configuration.

@@ -48,6 +48,7 @@ from elastalert.util import (add_raw_postfix, cronite_datetime_to_timestamp, dt_
 
 from elastalert.traceproviders import init_tracer
 from opentelemetry import trace
+from opentelemetry.trace.status import Status, StatusCode
 from functools import wraps
 
 # Global tracer variable - initialized once and accessible from any method
@@ -76,9 +77,14 @@ def trace_span(span_name):
                     
                     return func(*args, **kwargs)
                 except Exception as e:
-                    # Record error on span
-                    span.record_exception(e)
-                    span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+                    # Record error on span with detailed exception information
+                    span.record_exception(e, escaped=True)
+                    # Set status to ERROR - this must be done before span ends
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    # Also set error attributes directly on the span for visibility
+                    span.set_attribute("error", True)
+                    span.set_attribute("exception.type", e.__class__.__name__)
+                    span.set_attribute("exception.message", str(e))
                     # Re-raise the exception
                     raise
         return wrapper
@@ -1253,8 +1259,12 @@ class ElastAlerter(object):
             # Record error on root span if it exists
             current_span = trace.get_current_span()
             if current_span and current_span.is_recording():
-                current_span.record_exception(e)
-                current_span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+                current_span.record_exception(e, escaped=True)
+                current_span.set_status(Status(StatusCode.ERROR, str(e)))
+                # Also set error attributes directly on the span for visibility
+                current_span.set_attribute("error", True)
+                current_span.set_attribute("exception.type", e.__class__.__name__)
+                current_span.set_attribute("exception.message", str(e))
             # Re-raise to maintain existing error handling
             raise
 

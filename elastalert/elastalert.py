@@ -860,7 +860,6 @@ class ElastAlerter(object):
         :param end: The latest time to query.
         Returns True on success and False on failure.
         """
-        a = 1/0
         if start is None:
             start = self.get_index_start(rule['index'])
         if end is None:

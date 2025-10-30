@@ -1605,14 +1605,17 @@ class ElastAlerter(object):
             elastalert_logger.info('Pausing %s until next run at %s' % (
             rule['name'], pretty_ts(rule['next_starttime'], ts_format=self.pretty_ts_format)))
 
+    @trace_span("elastalert.stop")
     def stop(self):
         """ Stop an ElastAlert runner that's been started """
         self.running = False
 
+    @trace_span("elastalert.get_disabled_rules")
     def get_disabled_rules(self):
         """ Return disabled rules """
         return [rule['name'] for rule in self.disabled_rules]
 
+    @trace_span("elastalert.sleep_for")
     def sleep_for(self, duration):
         """ Sleep for a set duration """
         elastalert_logger.info("Sleeping for %s seconds" % (duration))
@@ -1818,6 +1821,7 @@ class ElastAlerter(object):
             elastalert_logger.exception("Error finding recent pending alerts: %s %s" % (e, query))
         return []
 
+    @trace_span("elastalert.send_pending_alerts")
     def send_pending_alerts(self):
         pending_alerts = self.find_recent_pending_alerts(self.alert_time_limit)
         for alert in pending_alerts:
@@ -1887,6 +1891,8 @@ class ElastAlerter(object):
                             if self.get_aggregation_key_value(rule, agg_match) != aggregation_key_value
                         ]
 
+
+    @trace_span("elastalert.get_aggregated_matches")
     def get_aggregated_matches(self, _id):
         """ Removes and returns all matches from writeback_es that have aggregate_id == _id """
 
@@ -1906,6 +1912,8 @@ class ElastAlerter(object):
             self.handle_error("Error fetching aggregated matches: %s" % (e), {'id': _id})
         return matches
 
+
+    @trace_span("elastalert.find_pending_aggregate_alert")
     def find_pending_aggregate_alert(self, rule, aggregation_key_value=None):
         query = {'filter': {'bool': {'must': [{'term': {'rule_name': rule['name']}},
                                               {'range': {'alert_time': {'gt': ts_now()}}},
@@ -2011,6 +2019,8 @@ class ElastAlerter(object):
 
         return res
 
+
+    @trace_span("elastalert.silence")
     def silence(self, silence_cache_key=None):
         """ Silence an alert for a period of time. --silence and --rule must be passed as args. """
         if self.debug:
@@ -2087,6 +2097,8 @@ class ElastAlerter(object):
                 return True
         return False
 
+
+    @trace_span("elastalert.handle_error")
     def handle_error(self, message, data=None):
         ''' Logs message at error level and writes message, data and traceback to Elasticsearch. '''
         elastalert_logger.error(message)
@@ -2097,6 +2109,7 @@ class ElastAlerter(object):
             body['data'] = data
         self.writeback('elastalert_error', body)
 
+    @trace_span("elastalert.handle_uncaught_exception")
     def handle_uncaught_exception(self, exception, rule):
         """ Disables a rule and sends a notification. """
         elastalert_logger.error(traceback.format_exc())
@@ -2109,6 +2122,7 @@ class ElastAlerter(object):
         if self.notify_email:
             self.send_notification_email(exception=exception, rule=rule)
 
+    @trace_span("elastalert.send_notification_email")
     def send_notification_email(self, text='', exception=None, rule=None, subject=None, rule_file=None):
         email_body = text
         rule_name = None
@@ -2147,6 +2161,7 @@ class ElastAlerter(object):
         except (SMTPException, error) as e:
             self.handle_error('Error connecting to SMTP host: %s' % (e), {'email_body': email_body})
 
+    @trace_span("elastalert.get_top_counts")
     def get_top_counts(self, rule, starttime, endtime, keys, number=None, qk=None):
         """ Counts the number of events for each unique value for each key field.
         Returns a dictionary with top_events_<key> mapped to the top 5 counts for each key. """
@@ -2202,13 +2217,14 @@ class ElastAlerter(object):
             return timestamp + rule['exponential_realert'], exponent - 1
         return timestamp + wait, exponent
 
-
+@trace_span("elastalert.handle_signal")
 def handle_signal(signal, frame):
     elastalert_logger.info('SIGINT received, stopping ElastAlert...')
     # use os._exit to exit immediately and avoid someone catching SystemExit
     os._exit(0)
 
 
+@trace_span("elastalert.main")
 def main(args=None):
     signal.signal(signal.SIGINT, handle_signal)
     if not args:

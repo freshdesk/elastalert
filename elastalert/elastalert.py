@@ -78,13 +78,21 @@ def trace_span(span_name):
             ...
     """
     def decorator(func):
-        @wraps(func)
+        # Handle staticmethod objects - extract the underlying function
+        if isinstance(func, staticmethod):
+            original_func = func.__func__
+            is_static = True
+        else:
+            original_func = func
+            is_static = False
+        
+        @wraps(original_func)
         def wrapper(*args, **kwargs):
             tracer = get_tracer()
             with tracer.start_as_current_span(span_name) as span:
                 try:
-                    # Set method name attribute
-                    span.set_attribute("method.name", func.__name__)
+                    # Set method name attribute - use the original function's name
+                    span.set_attribute("method.name", original_func.__name__)
                     
                     # Try to detect if this is an instance method or static method
                     # For instance methods, args[0] is 'self' (an instance of the class)
@@ -96,11 +104,11 @@ def trace_span(span_name):
                         if hasattr(first_arg, '__class__'):
                             class_name = first_arg.__class__.__name__
                             # Check if this method exists as an instance method on the class
-                            if hasattr(first_arg, func.__name__):
+                            if not is_static and hasattr(first_arg, original_func.__name__):
                                 # Likely an instance method
                                 span.set_attribute("method.class", class_name)
-                            else:
-                                # Might be a static method with an object as first parameter
+                            elif is_static:
+                                # Static method with an object as first parameter
                                 # Still record the class if it's an object
                                 span.set_attribute("method.class", class_name)
                     
@@ -116,6 +124,10 @@ def trace_span(span_name):
                     span.set_attribute("exception.message", str(e))
                     # Re-raise the exception
                     raise
+        
+        # If the original func was a staticmethod, return a staticmethod-wrapped wrapper
+        if is_static:
+            return staticmethod(wrapper)
         return wrapper
     return decorator
 
@@ -860,6 +872,9 @@ class ElastAlerter(object):
         :param end: The latest time to query.
         Returns True on success and False on failure.
         """
+
+        a = 1/0
+
         if start is None:
             start = self.get_index_start(rule['index'])
         if end is None:

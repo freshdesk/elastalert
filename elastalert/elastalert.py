@@ -934,6 +934,8 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.get_starttime")
     def get_starttime(self, rule):
+        a = 1/0
+
         """ Query ES for the last time we ran this rule.
 
         :param rule: The rule configuration.

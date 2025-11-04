@@ -514,6 +514,17 @@ class ElastAlerter(object):
 
         request = get_msearch_query(query,rule)
 
+        # Add request to current span as attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert request to JSON string for span attribute
+            try:
+                request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
+                current_span.set_attribute("request", request_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("request", str(request))
+
         #removed scroll as it aint supported
         # extra_args = {'_source_includes': rule['include']}
         # scroll_keepalive = rule.get('scroll_keepalive', self.scroll_keepalive)

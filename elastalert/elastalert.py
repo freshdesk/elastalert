@@ -112,7 +112,7 @@ def trace_span(span_name):
                                 # Still record the class if it's an object
                                 span.set_attribute("method.class", class_name)
                     
-                    return func(*args, **kwargs)
+                    return original_func(*args, **kwargs)
                 except Exception as e:
                     # Record error on span with detailed exception information
                     span.record_exception(e, escaped=True)

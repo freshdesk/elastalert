@@ -94,6 +94,31 @@ def trace_span(span_name):
                     # Set method name attribute - use the original function's name
                     span.set_attribute("method.name", original_func.__name__)
                     
+                    # Try to get rule name from various sources
+                    rule_name = None
+                    
+                    # First, try to get from thread_data (set in run_rule)
+                    # Try to get from self if it's an instance method
+                    if not is_static and args:
+                        self_obj = args[0]
+                        if hasattr(self_obj, 'thread_data'):
+                            try:
+                                rule_name = getattr(self_obj.thread_data, 'current_rule_name', None)
+                            except (AttributeError, RuntimeError):
+                                pass
+                    
+                    # Second, try to find rule in method arguments
+                    if not rule_name:
+                        # Check args for a 'rule' parameter (could be dict with 'name' key)
+                        for arg in args:
+                            if isinstance(arg, dict) and 'name' in arg:
+                                rule_name = arg.get('name', 'unknown')
+                                break
+                    
+                    # Add rule name to span if found
+                    if rule_name:
+                        span.set_attribute("rule.name", rule_name)
+                    
                     # Try to detect if this is an instance method or static method
                     # For instance methods, args[0] is 'self' (an instance of the class)
                     # For static methods, args might be empty or args[0] is a regular parameter
@@ -1162,6 +1187,9 @@ class ElastAlerter(object):
                 if starttime:
                     root_span.set_attribute("query.starttime", str(starttime))
                 root_span.set_attribute("query.endtime", str(endtime))
+                
+                # Store rule name in thread_data so all child spans can access it
+                self.thread_data.current_rule_name = rule.get('name', 'unknown')
                 
                 self.thread_data.current_es = kibana_adapter_client(rule)
                 self.current_es_addr = (rule['es_host'], rule['es_port'])

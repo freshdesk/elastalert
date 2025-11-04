@@ -8,14 +8,15 @@ from opentelemetry.semconv.resource import ResourceAttributes
 from opentelemetry.trace.status import Status, StatusCode
 from opentelemetry.trace import SpanKind
 
-
-
 from opentelemetry import trace
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import socket
 import logging
+
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
 
 config = {
     'enabled': True,
@@ -81,6 +82,13 @@ def init_tracer():
         trace_provider.add_span_processor(span_processor)
 
         trace.set_tracer_provider(trace_provider)
+
+        # Initialize requests auto-instrumentation
+        try:
+            RequestsInstrumentor().instrument(tracer_provider=trace_provider)
+            logger.info("Requests auto-instrumentation initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize requests auto-instrumentation: {e}")
 
         tracer = trace.get_tracer("elastalert-service")
 

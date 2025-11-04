@@ -873,7 +873,6 @@ class ElastAlerter(object):
         Returns True on success and False on failure.
         """
 
-        a = 1/0
 
         if start is None:
             start = self.get_index_start(rule['index'])

@@ -1562,7 +1562,6 @@ class ElastAlerter(object):
         self.rule_hashes = new_rule_hashes
 
 
-    @trace_span("elastalert.start")
     def start(self):
         """ Periodically go through each rule and run it """
         if self.starttime:

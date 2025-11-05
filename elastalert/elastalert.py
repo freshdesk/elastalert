@@ -1190,7 +1190,6 @@ class ElastAlerter(object):
         return key_value
 
 
-    @trace_span("elastalert.enhance_filter")
     def enhance_filter(self, rule):
         """ If there is a blacklist or whitelist in rule then we add it to the filter.
         It adds it as a query_string. If there is already an query string its is appended
@@ -1412,7 +1411,6 @@ class ElastAlerter(object):
             raise
 
 
-    @trace_span("elastalert.init_rule")
     def init_rule(self, new_rule, new=True):
         ''' Copies some necessary non-config state from an exiting rule to a new rule. '''
         if not new and self.scheduler.get_job(job_id=new_rule['name']):

@@ -496,14 +496,8 @@ class ElastAlerter(object):
         current_span = trace.get_current_span()
 
         if current_span and current_span.is_recording():
-            current_span.set_attribute("processed_hits_count", len(processed_hits))
-            # Add as event with serialized data (use sparingly - can be expensive)
-            current_span.add_event(
-                "processed_hits_data",
-                attributes={
-                    "hits_json": str(processed_hits[:10])  # Limit to first 10
-                }
-            )
+            current_span.set_attribute("processed_hits", str(processed_hits[:10]))
+
 
         return processed_hits
 

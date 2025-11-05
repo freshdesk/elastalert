@@ -1760,7 +1760,7 @@ class ElastAlerter(object):
         """ Stop an ElastAlert runner that's been started """
         self.running = False
 
-    @trace_span("elastalert.get_disabled_rules")
+
     def get_disabled_rules(self):
         """ Return disabled rules """
         return [rule['name'] for rule in self.disabled_rules]

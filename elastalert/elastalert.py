@@ -501,7 +501,7 @@ class ElastAlerter(object):
             current_span.add_event(
                 "processed_hits_data",
                 attributes={
-                    "hits_json": json.dumps(processed_hits[:10])  # Limit to first 10
+                    "hits_json": str(processed_hits[:10])  # Limit to first 10
                 }
             )
 

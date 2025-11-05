@@ -1114,6 +1114,11 @@ class ElastAlerter(object):
                 #Based on PR 3141 old Yelp/elastalert - rschirin
                 rule['starttime'] = endtime - rule['timeframe']
 
+        #add starttime to span attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            current_span.set_attribute("starttime", rule['starttime'])
+
 
     @trace_span("elastalert.adjust_start_time_for_overlapping_agg_query")
     def adjust_start_time_for_overlapping_agg_query(self, rule):

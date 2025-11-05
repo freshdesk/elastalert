@@ -1073,6 +1073,8 @@ class ElastAlerter(object):
     @trace_span("elastalert.set_starttime")
     def set_starttime(self, rule, endtime):
         """ Given a rule and an endtime, sets the appropriate starttime for it. """
+        current_span = trace.get_current_span()
+
         # This means we are starting fresh
         if 'starttime' not in rule:
             if not rule.get('scan_entire_timeframe'):
@@ -1083,6 +1085,10 @@ class ElastAlerter(object):
                     self.adjust_start_time_for_overlapping_agg_query(rule)
                     self.adjust_start_time_for_interval_sync(rule, endtime)
                     rule['minimum_starttime'] = rule['starttime']
+                    #add starttime to span attribute
+                    if current_span and current_span.is_recording():
+                        current_span.set_attribute("starttime", rule['starttime'])
+
                     return None
 
         # Use buffer for normal queries, or run_every increments otherwise
@@ -1115,7 +1121,6 @@ class ElastAlerter(object):
                 rule['starttime'] = endtime - rule['timeframe']
 
         #add starttime to span attribute
-        current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
             current_span.set_attribute("starttime", rule['starttime'])
 

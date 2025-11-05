@@ -493,6 +493,18 @@ class ElastAlerter(object):
 
             processed_hits.append(hit['_source'])
 
+        current_span = trace.get_current_span()
+
+        if current_span and current_span.is_recording():
+            current_span.set_attribute("processed_hits_count", len(processed_hits))
+            # Add as event with serialized data (use sparingly - can be expensive)
+            current_span.add_event(
+                "processed_hits_data",
+                attributes={
+                    "hits_json": json.dumps(processed_hits[:10])  # Limit to first 10
+                }
+            )
+
         return processed_hits
 
     @trace_span("elastalert.get_hits")
@@ -516,14 +528,15 @@ class ElastAlerter(object):
 
         # Add request to current span as attribute
         current_span = trace.get_current_span()
+
         if current_span and current_span.is_recording():
             # Convert request to JSON string for span attribute
             try:
                 request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
-                current_span.set_attribute("request", request_str)
+                current_span.set_attribute("msearch_request", request_str)
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.set_attribute("request", str(request))
+                current_span.set_attribute("msearch_request", str(request))
 
         #removed scroll as it aint supported
         # extra_args = {'_source_includes': rule['include']}
@@ -536,6 +549,10 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+            
+            if current_span and current_span.is_recording():
+                current_span.set_attribute("msearch_response", json.dumps(res))
+
             self.thread_data.total_hits = int(res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
 
             #removed scroll as it aint supported

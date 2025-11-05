@@ -1654,7 +1654,6 @@ class ElastAlerter(object):
         self.handle_config_change()
 
 
-    @trace_span("elastalert.handle_pending_alerts")
     def handle_pending_alerts(self):
         self.thread_data.alerts_sent = 0
         self.send_pending_alerts()
@@ -1662,7 +1661,6 @@ class ElastAlerter(object):
             self.thread_data.alerts_sent, pretty_ts(ts_now(), ts_format=self.pretty_ts_format)))
 
 
-    @trace_span("elastalert.handle_config_change")
     def handle_config_change(self):
         if not self.args.pin_rules:
             self.load_rule_changes()

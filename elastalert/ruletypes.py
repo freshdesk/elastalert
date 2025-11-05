@@ -4,6 +4,7 @@ import datetime
 import sys
 import time
 import itertools
+import json
 from functools import wraps
 
 from sortedcontainers import SortedKeyList as sortedlist
@@ -1094,6 +1095,22 @@ class NewTermsRule(RuleType):
         query = self.get_new_term_query(starttime,endtime,field)
         request = get_msearch_query(query,self.rules)
         
+        # Add query,request to current span as attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert query to JSON string for span attribute
+            try:
+                query_str = json.dumps(query) if isinstance(query, (dict, list)) else str(query)
+                current_span.set_attribute("query", query_str)
+                request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
+                current_span.set_attribute("msearch_request", request_str)
+
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("query", str(query))
+                current_span.set_attribute("msearch_request", str(request))
+
+
         if request_timeout == None:
             res = es.msearch(body=request) 
         else:

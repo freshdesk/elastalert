@@ -647,10 +647,34 @@ class ElastAlerter(object):
 
         request = get_msearch_query(query,rule)
 
+        # Add request to current span as attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert request to JSON string for span attribute
+            try:
+                request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
+                current_span.set_attribute("msearch_request", request_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("msearch_request", str(request))
+
+
         try:
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+
+            # Add response to current span as attribute
+            if current_span and current_span.is_recording():
+                # Convert response to JSON string for span attribute
+                try:
+                    response_str = json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+                    current_span.set_attribute("msearch_response", response_str)
+                except (TypeError, ValueError):
+                    # If JSON serialization fails, use string representation
+                    current_span.set_attribute("msearch_response", str(res))
+
+
         except ElasticsearchException as e:
             # Elasticsearch sometimes gives us GIGANTIC error messages
             # (so big that they will fill the entire terminal buffer)
@@ -711,10 +735,31 @@ class ElastAlerter(object):
         query = self.get_terms_query(base_query, rule, size, key)
         request = get_msearch_query(query,rule)
 
+        # Add request to current span as attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert request to JSON string for span attribute
+            try:
+                request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
+                current_span.set_attribute("msearch_request", request_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("msearch_request", str(request))
+
         try:
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+
+            # Add response to current span as attribute
+            if current_span and current_span.is_recording():
+                # Convert response to JSON string for span attribute
+                try:
+                    response_str = json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+                    current_span.set_attribute("msearch_response", response_str)
+                except (TypeError, ValueError):
+                    # If JSON serialization fails, use string representation
+                    current_span.set_attribute("msearch_response", str(res))
 
         except ElasticsearchException as e:
             # Elasticsearch sometimes gives us GIGANTIC error messages
@@ -944,6 +989,19 @@ class ElastAlerter(object):
                 old_len = len(data)
                 data = self.remove_duplicate_events(data, rule)
                 self.thread_data.num_dupes += old_len - len(data)
+
+
+        # Add data to current span as attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert data to JSON string for span attribute
+            try:
+                data_str = json.dumps(data) if isinstance(data, (dict, list)) else str(data)
+                current_span.set_attribute("data", data_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("data", str(data))
+
 
         # There was an exception while querying
         if data is None:
@@ -1871,6 +1929,19 @@ class ElastAlerter(object):
         else:
             writeback_body = body
 
+        # Add writeback body to current span as attribute
+
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert writeback body to JSON string for span attribute
+            try:
+                writeback_body_str = json.dumps(writeback_body) if isinstance(writeback_body, (dict, list)) else str(writeback_body)
+                current_span.set_attribute("writeback_body", writeback_body_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("writeback_body", str(writeback_body))
+        
+        
         for key in list(writeback_body.keys()):
             # Convert any datetime objects to timestamps
             if isinstance(writeback_body[key], datetime.datetime):
@@ -1889,6 +1960,15 @@ class ElastAlerter(object):
             return res
         except ElasticsearchException as e:
             elastalert_logger.exception("Error writing alert info to Elasticsearch: %s" % (e))
+            # Add error to current span as exception
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                current_span.record_exception(e, escaped=True)
+                current_span.set_status(Status(StatusCode.ERROR, str(e)))
+                # Also set error attributes directly on the span for visibility
+                current_span.set_attribute("error", True)
+                current_span.set_attribute("exception.type", e.__class__.__name__)
+                current_span.set_attribute("exception.message", str(e))
 
 
     @trace_span("elastalert.find_recent_pending_alerts")

@@ -1608,7 +1608,6 @@ class ElastAlerter(object):
             self.sleep_for(sleep_duration)
 
 
-    @trace_span("elastalert.wait_until_responsive")
     def wait_until_responsive(self, timeout, clock=timeit.default_timer):
         """Wait until ElasticSearch becomes responsive (or too much time passes)."""
 
@@ -1766,7 +1765,6 @@ class ElastAlerter(object):
         """ Return disabled rules """
         return [rule['name'] for rule in self.disabled_rules]
 
-    @trace_span("elastalert.sleep_for")
     def sleep_for(self, duration):
         """ Sleep for a set duration """
         elastalert_logger.info("Sleeping for %s seconds" % (duration))

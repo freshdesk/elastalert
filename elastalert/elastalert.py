@@ -1401,6 +1401,9 @@ class ElastAlerter(object):
 
             if self.is_silenced(rule['name'] + "._silence") or self.is_silenced(silence_cache_key):
                 elastalert_logger.info('Ignoring match for silenced rule %s' % (silence_cache_key,))
+                current_span = trace.get_current_span()
+                if current_span and current_span.is_recording():
+                    current_span.set_attribute("rule.silenced", True)
                 continue
 
             if rule['realert']:

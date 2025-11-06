@@ -78,13 +78,46 @@ def trace_span(span_name):
             ...
     """
     def decorator(func):
-        @wraps(func)
+        # Handle staticmethod objects - extract the underlying function
+        if isinstance(func, staticmethod):
+            original_func = func.__func__
+            is_static = True
+        else:
+            original_func = func
+            is_static = False
+        
+        @wraps(original_func)
         def wrapper(*args, **kwargs):
             tracer = get_tracer()
             with tracer.start_as_current_span(span_name) as span:
                 try:
-                    # Set method name attribute
-                    span.set_attribute("method.name", func.__name__)
+                    # Set method name attribute - use the original function's name
+                    span.set_attribute("method.name", original_func.__name__)
+                    
+                    # Try to get rule name from various sources
+                    rule_name = None
+                    
+                    # First, try to get from thread_data (set in run_rule)
+                    # Try to get from self if it's an instance method
+                    if not is_static and args:
+                        self_obj = args[0]
+                        if hasattr(self_obj, 'thread_data'):
+                            try:
+                                rule_name = getattr(self_obj.thread_data, 'current_rule_name', None)
+                            except (AttributeError, RuntimeError):
+                                pass
+                    
+                    # Second, try to find rule in method arguments
+                    if not rule_name:
+                        # Check args for a 'rule' parameter (could be dict with 'name' key)
+                        for arg in args:
+                            if isinstance(arg, dict) and 'name' in arg:
+                                rule_name = arg.get('name', 'unknown')
+                                break
+                    
+                    # Add rule name to span if found
+                    if rule_name:
+                        span.set_attribute("rule.name", rule_name)
                     
                     # Try to detect if this is an instance method or static method
                     # For instance methods, args[0] is 'self' (an instance of the class)
@@ -96,15 +129,15 @@ def trace_span(span_name):
                         if hasattr(first_arg, '__class__'):
                             class_name = first_arg.__class__.__name__
                             # Check if this method exists as an instance method on the class
-                            if hasattr(first_arg, func.__name__):
+                            if not is_static and hasattr(first_arg, original_func.__name__):
                                 # Likely an instance method
                                 span.set_attribute("method.class", class_name)
-                            else:
-                                # Might be a static method with an object as first parameter
+                            elif is_static:
+                                # Static method with an object as first parameter
                                 # Still record the class if it's an object
                                 span.set_attribute("method.class", class_name)
                     
-                    return func(*args, **kwargs)
+                    return original_func(*args, **kwargs)
                 except Exception as e:
                     # Record error on span with detailed exception information
                     span.record_exception(e, escaped=True)
@@ -116,6 +149,10 @@ def trace_span(span_name):
                     span.set_attribute("exception.message", str(e))
                     # Re-raise the exception
                     raise
+        
+        # If the original func was a staticmethod, return a staticmethod-wrapped wrapper
+        if is_static:
+            return staticmethod(wrapper)
         return wrapper
     return decorator
 
@@ -325,6 +362,11 @@ class ElastAlerter(object):
         query = {'query': {'bool': es_filters}}
         if sort:
             query['sort'] = [{timestamp_field: {'order': 'desc' if desc else 'asc'}}]
+        
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            current_span.set_attribute("query", str(query))
+
         return query
 
     @trace_span("elastalert.get_terms_query")
@@ -456,6 +498,12 @@ class ElastAlerter(object):
 
             processed_hits.append(hit['_source'])
 
+        # Add span attributes for processed hits (using counts and samples, not full data)
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            current_span.set_attribute("processed_hits_count", len(processed_hits))
+            current_span.set_attribute("processed_hits", str(processed_hits[:10]))
+        
         return processed_hits
 
     @trace_span("elastalert.get_hits")
@@ -477,6 +525,18 @@ class ElastAlerter(object):
 
         request = get_msearch_query(query,rule)
 
+        # Add request to current span as attribute
+        current_span = trace.get_current_span()
+
+        if current_span and current_span.is_recording():
+            # Convert request to JSON string for span attribute
+            try:
+                request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
+                current_span.set_attribute("msearch_request", request_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("msearch_request", str(request))
+
         #removed scroll as it aint supported
         # extra_args = {'_source_includes': rule['include']}
         # scroll_keepalive = rule.get('scroll_keepalive', self.scroll_keepalive)
@@ -488,6 +548,10 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+            
+            if current_span and current_span.is_recording():
+                current_span.set_attribute("msearch_response", json.dumps(res))
+
             self.thread_data.total_hits = int(res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
 
             #removed scroll as it aint supported
@@ -599,10 +663,34 @@ class ElastAlerter(object):
 
         request = get_msearch_query(query,rule)
 
+        # Add request to current span as attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert request to JSON string for span attribute
+            try:
+                request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
+                current_span.set_attribute("msearch_request", request_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("msearch_request", str(request))
+
+
         try:
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+
+            # Add response to current span as attribute
+            if current_span and current_span.is_recording():
+                # Convert response to JSON string for span attribute
+                try:
+                    response_str = json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+                    current_span.set_attribute("msearch_response", response_str)
+                except (TypeError, ValueError):
+                    # If JSON serialization fails, use string representation
+                    current_span.set_attribute("msearch_response", str(res))
+
+
         except ElasticsearchException as e:
             # Elasticsearch sometimes gives us GIGANTIC error messages
             # (so big that they will fill the entire terminal buffer)
@@ -663,10 +751,31 @@ class ElastAlerter(object):
         query = self.get_terms_query(base_query, rule, size, key)
         request = get_msearch_query(query,rule)
 
+        # Add request to current span as attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert request to JSON string for span attribute
+            try:
+                request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
+                current_span.set_attribute("msearch_request", request_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("msearch_request", str(request))
+
         try:
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+
+            # Add response to current span as attribute
+            if current_span and current_span.is_recording():
+                # Convert response to JSON string for span attribute
+                try:
+                    response_str = json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+                    current_span.set_attribute("msearch_response", response_str)
+                except (TypeError, ValueError):
+                    # If JSON serialization fails, use string representation
+                    current_span.set_attribute("msearch_response", str(res))
 
         except ElasticsearchException as e:
             # Elasticsearch sometimes gives us GIGANTIC error messages
@@ -850,6 +959,10 @@ class ElastAlerter(object):
                 remove.append(_id)
         list(map(rule['processed_hits'].pop, remove))
 
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            current_span.set_attribute("remove_old_events", str(remove))
+
 
     @trace_span("elastalert.run_query")
     def run_query(self, rule, start=None, end=None, scroll=False):
@@ -860,6 +973,8 @@ class ElastAlerter(object):
         :param end: The latest time to query.
         Returns True on success and False on failure.
         """
+
+
         if start is None:
             start = self.get_index_start(rule['index'])
         if end is None:
@@ -869,6 +984,11 @@ class ElastAlerter(object):
             elastalert_logger.info("Query start and end time converting UTC to query_timezone : {}".format(rule.get('query_timezone')))
             start = ts_utc_to_tz(start, rule.get('query_timezone'))
             end = ts_utc_to_tz(end, rule.get('query_timezone'))
+
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                current_span.set_attribute("query.starttime", str(start))
+                current_span.set_attribute("query.endtime", str(end))
         # Reset hit counter and query
         rule_inst = rule['type']
         rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
@@ -895,6 +1015,19 @@ class ElastAlerter(object):
                 data = self.remove_duplicate_events(data, rule)
                 self.thread_data.num_dupes += old_len - len(data)
 
+
+        # Add data to current span as attribute
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            # Convert data to JSON string for span attribute
+            try:
+                data_str = json.dumps(data) if isinstance(data, (dict, list)) else str(data)
+                current_span.set_attribute("data", data_str)
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                current_span.set_attribute("data", str(data))
+
+
         # There was an exception while querying
         if data is None:
             return False
@@ -911,6 +1044,10 @@ class ElastAlerter(object):
                 rule_inst.add_aggregation_data(data)
             else:
                 rule_inst.add_data(data)
+
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            current_span.set_attribute("rule.rule_inst", str(rule_inst))
 
 
         #Removed scrolling as in old elastalert
@@ -934,6 +1071,7 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.get_starttime")
     def get_starttime(self, rule):
+
         """ Query ES for the last time we ran this rule.
 
         :param rule: The rule configuration.
@@ -961,9 +1099,11 @@ class ElastAlerter(object):
             self.handle_error('Error querying for last run: %s' % (e), {'rule': rule['name']})
 
 
-    @trace_span("elastalert.set_starttime")
+    # @trace_span("elastalert.set_starttime")
     def set_starttime(self, rule, endtime):
         """ Given a rule and an endtime, sets the appropriate starttime for it. """
+        current_span = trace.get_current_span()
+
         # This means we are starting fresh
         if 'starttime' not in rule:
             if not rule.get('scan_entire_timeframe'):
@@ -974,6 +1114,10 @@ class ElastAlerter(object):
                     self.adjust_start_time_for_overlapping_agg_query(rule)
                     self.adjust_start_time_for_interval_sync(rule, endtime)
                     rule['minimum_starttime'] = rule['starttime']
+                    #add starttime to span attribute
+                    if current_span and current_span.is_recording():
+                        current_span.set_attribute("starttime", rule['starttime'])
+
                     return None
 
         # Use buffer for normal queries, or run_every increments otherwise
@@ -1004,6 +1148,10 @@ class ElastAlerter(object):
             else:
                 #Based on PR 3141 old Yelp/elastalert - rschirin
                 rule['starttime'] = endtime - rule['timeframe']
+
+        #add starttime to span attribute
+        if current_span and current_span.is_recording():
+            current_span.set_attribute("starttime", rule['starttime'])
 
 
     @trace_span("elastalert.adjust_start_time_for_overlapping_agg_query")
@@ -1036,14 +1184,25 @@ class ElastAlerter(object):
     def get_segment_size(self, rule):
         """ The segment size is either buffer_size for queries which can overlap or run_every for queries
         which must be strictly separate. This mimicks the query size for when ElastAlert is running continuously. """
+        
+        current_span = trace.get_current_span()
+
         if not rule.get('use_count_query') and not rule.get('use_terms_query') and not rule.get('aggregation_query_element'):
+            if current_span and current_span.is_recording():
+                current_span.set_attribute("segment_size", str(rule.get('buffer_time', self.buffer_time)))
             return rule.get('buffer_time', self.buffer_time)
         elif rule.get('aggregation_query_element'):
             if rule.get('use_run_every_query_size'):
+                if current_span and current_span.is_recording():
+                    current_span.set_attribute("segment_size", str(self.run_every))
                 return self.run_every
             else:
+                if current_span and current_span.is_recording():
+                    current_span.set_attribute("segment_size", str(rule.get('buffer_time', self.buffer_time)))
                 return rule.get('buffer_time', self.buffer_time)
         else:
+            if current_span and current_span.is_recording():
+                current_span.set_attribute("segment_size", str(self.run_every))
             return self.run_every
 
 
@@ -1081,7 +1240,6 @@ class ElastAlerter(object):
         return key_value
 
 
-    @trace_span("elastalert.enhance_filter")
     def enhance_filter(self, rule):
         """ If there is a blacklist or whitelist in rule then we add it to the filter.
         It adds it as a query_string. If there is already an query string its is appended
@@ -1137,170 +1295,189 @@ class ElastAlerter(object):
         """
         run_start = time.time()
         
-        # Create root span for this rule execution - all child spans will be under this trace
-        tracer = get_tracer()
-        try:
-            with tracer.start_as_current_span("elastalert.run_rule") as root_span:
-                root_span.set_attribute("rule.name", rule.get('name', 'unknown'))
-                root_span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__)
-                root_span.set_attribute("rule.index", rule.get('index', ''))
-                if starttime:
-                    root_span.set_attribute("query.starttime", str(starttime))
-                root_span.set_attribute("query.endtime", str(endtime))
-                
-                self.thread_data.current_es = kibana_adapter_client(rule)
-                self.current_es_addr = (rule['es_host'], rule['es_port'])
+        # Get the current span (created by @trace_span decorator) and add comprehensive attributes
+        root_span = trace.get_current_span()
+        if root_span and root_span.is_recording():
+            # Rule identification
+            root_span.set_attribute("rule.name", rule.get('name', 'unknown'))
+            root_span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__ if rule.get('type') else 'unknown')
+            root_span.set_attribute("rule.index", rule.get('index', 'unknown'))
+            
+            # Elasticsearch connection details
+            root_span.set_attribute("es.host", rule.get('es_host', 'unknown'))
+            root_span.set_attribute("es.port", rule.get('es_port', 0))
+            
+            # Rule configuration details
+            # if rule.get('query_key'):
+            #     root_span.set_attribute("rule.query_key", rule['query_key'])
+            # if rule.get('aggregation'):
+            #     root_span.set_attribute("rule.aggregation_period", str(rule['aggregation']))
+            # if rule.get('realert'):
+            #     root_span.set_attribute("rule.realert_period", str(rule['realert']))
+            # root_span.set_attribute("rule.has_aggregation_query", bool(rule.get('aggregation_query_element')))
+            # root_span.set_attribute("rule.use_count_query", bool(rule.get('use_count_query')))
+            # root_span.set_attribute("rule.use_terms_query", bool(rule.get('use_terms_query')))
+            
+            # Tenant information if available
+            if rule.get('tenant'):
+                root_span.set_attribute("rule.tenant", rule['tenant'])
+        
+        self.thread_data.current_es = kibana_adapter_client(rule)
+        self.current_es_addr = (rule['es_host'], rule['es_port'])
 
-                # If there are pending aggregate matches, try processing them
-                for x in range(len(rule['agg_matches'])):
-                    match = rule['agg_matches'].pop()
-                    self.add_aggregated_alert(match, rule)
+        # If there are pending aggregate matches, try processing them
+        for x in range(len(rule['agg_matches'])):
+            match = rule['agg_matches'].pop()
+            self.add_aggregated_alert(match, rule)
 
-                # Start from provided time if it's given
-                if starttime:
-                    rule['starttime'] = starttime
-                else:
-                    self.set_starttime(rule, endtime)
+        # Start from provided time if it's given
+        if starttime:
+            rule['starttime'] = starttime
+        else:
+            self.set_starttime(rule, endtime)
 
-                rule['original_starttime'] = rule['starttime']
-                rule['scrolling_cycle'] = 0
-                self.thread_data.num_hits = 0
-                self.thread_data.num_dupes = 0
-                self.thread_data.cumulative_hits = 0
+        rule['original_starttime'] = rule['starttime']
+        rule['scrolling_cycle'] = 0
+        self.thread_data.num_hits = 0
+        self.thread_data.num_dupes = 0
+        self.thread_data.cumulative_hits = 0
 
-                # Don't run if starttime was set to the future
-                if ts_now() <= rule['starttime']:
-                    elastalert_logger.warning("Attempted to use query start time in the future (%s), sleeping instead" % (starttime))
+        # Add actual starttime to span after it's been computed
+        if root_span and root_span.is_recording():
+            root_span.set_attribute("query.starttime_actual", str(rule['starttime']))
+            
+        # Don't run if starttime was set to the future
+        if ts_now() <= rule['starttime']:
+            elastalert_logger.warning("Attempted to use query start time in the future (%s), sleeping instead" % (starttime))
+            return 0
+
+        # Run the rule. If querying over a large time period, split it up into segments
+        segment_size = self.get_segment_size(rule)
+        
+        if root_span and root_span.is_recording():
+            root_span.set_attribute("query.segment_size", str(segment_size))
+
+        tmp_endtime = rule['starttime']
+
+        while endtime - rule['starttime'] > segment_size:
+            tmp_endtime = tmp_endtime + segment_size
+            if not self.run_query(rule, rule['starttime'], tmp_endtime):
+                return 0
+            self.thread_data.cumulative_hits += self.thread_data.num_hits
+            self.thread_data.num_hits = 0
+            rule['starttime'] = tmp_endtime
+            rule['type'].garbage_collect(tmp_endtime)
+
+        if rule.get('aggregation_query_element'):
+            if endtime - tmp_endtime == segment_size:
+                if not self.run_query(rule, tmp_endtime, endtime):
                     return 0
+                self.thread_data.cumulative_hits += self.thread_data.num_hits
+            elif total_seconds(rule['original_starttime'] - tmp_endtime) == 0:
+                rule['starttime'] = rule['original_starttime']
+                return 0
+            else:
+                endtime = tmp_endtime
+        else:
+            if not self.run_query(rule, rule['starttime'], endtime):
+                return 0
+            self.thread_data.cumulative_hits += self.thread_data.num_hits
+            rule['type'].garbage_collect(endtime)
 
-                # Run the rule. If querying over a large time period, split it up into segments
-                segment_size = self.get_segment_size(rule)
+        # Process any new matches
+        num_matches = len(rule['type'].matches)
+        while rule['type'].matches:
+            match = rule['type'].matches.pop(0)
+            match['num_hits'] = self.thread_data.cumulative_hits
+            match['num_matches'] = num_matches
 
-                tmp_endtime = rule['starttime']
+            # If realert is set, silence the rule for that duration
+            # Silence is cached by query_key, if it exists
+            # Default realert time is 0 seconds
+            silence_cache_key = rule['realert_key']
+            query_key_value = self.get_query_key_value(rule, match)
+            if query_key_value is not None:
+                silence_cache_key += '.' + query_key_value
 
-                while endtime - rule['starttime'] > segment_size:
-                    tmp_endtime = tmp_endtime + segment_size
-                    if not self.run_query(rule, rule['starttime'], tmp_endtime):
-                        return 0
-                    self.thread_data.cumulative_hits += self.thread_data.num_hits
-                    self.thread_data.num_hits = 0
-                    rule['starttime'] = tmp_endtime
-                    rule['type'].garbage_collect(tmp_endtime)
+            if self.is_silenced(rule['name'] + "._silence") or self.is_silenced(silence_cache_key):
+                elastalert_logger.info('Ignoring match for silenced rule %s' % (silence_cache_key,))
+                current_span = trace.get_current_span()
+                if current_span and current_span.is_recording():
+                    current_span.set_attribute("rule.silenced", True)
+                continue
 
-                if rule.get('aggregation_query_element'):
-                    if endtime - tmp_endtime == segment_size:
-                        if not self.run_query(rule, tmp_endtime, endtime):
-                            return 0
-                        self.thread_data.cumulative_hits += self.thread_data.num_hits
-                    elif total_seconds(rule['original_starttime'] - tmp_endtime) == 0:
-                        rule['starttime'] = rule['original_starttime']
-                        return 0
-                    else:
-                        endtime = tmp_endtime
-                else:
-                    if not self.run_query(rule, rule['starttime'], endtime):
-                        return 0
-                    self.thread_data.cumulative_hits += self.thread_data.num_hits
-                    rule['type'].garbage_collect(endtime)
+            if rule['realert']:
+                next_alert, exponent = self.next_alert_time(rule, silence_cache_key, ts_now())
+                self.set_realert(silence_cache_key, next_alert, exponent)
 
-                # Process any new matches
-                num_matches = len(rule['type'].matches)
-                while rule['type'].matches:
-                    match = rule['type'].matches.pop(0)
-                    match['num_hits'] = self.thread_data.cumulative_hits
-                    match['num_matches'] = num_matches
-
-                    # If realert is set, silence the rule for that duration
-                    # Silence is cached by query_key, if it exists
-                    # Default realert time is 0 seconds
-                    silence_cache_key = rule['realert_key']
-                    query_key_value = self.get_query_key_value(rule, match)
-                    if query_key_value is not None:
-                        silence_cache_key += '.' + query_key_value
-
-                    if self.is_silenced(rule['name'] + "._silence") or self.is_silenced(silence_cache_key):
-                        elastalert_logger.info('Ignoring match for silenced rule %s' % (silence_cache_key,))
-                        continue
-
-                    if rule['realert']:
-                        next_alert, exponent = self.next_alert_time(rule, silence_cache_key, ts_now())
-                        self.set_realert(silence_cache_key, next_alert, exponent)
-
-                    if rule.get('run_enhancements_first'):
+            if rule.get('run_enhancements_first'):
+                try:
+                    for enhancement in rule['match_enhancements']:
                         try:
-                            for enhancement in rule['match_enhancements']:
-                                try:
-                                    enhancement.process(match)
-                                except EAException as e:
-                                    self.handle_error("Error running match enhancement: %s" % (e), {'rule': rule['name']})
-                        except DropMatchException:
-                            continue
+                            enhancement.process(match)
+                        except EAException as e:
+                            self.handle_error("Error running match enhancement: %s" % (e), {'rule': rule['name']})
+                except DropMatchException:
+                    continue
 
-                    # If no aggregation, alert immediately
-                    if not rule['aggregation']:
-                        self.alert([match], rule)
-                        continue
+            # If no aggregation, alert immediately
+            if not rule['aggregation']:
+                self.alert([match], rule)
+                continue
 
-                    # Add it as an aggregated match
-                    self.add_aggregated_alert(match, rule)
+            # Add it as an aggregated match
+            self.add_aggregated_alert(match, rule)
 
-                # Mark this endtime for next run's start
-                rule['previous_endtime'] = endtime
+        # Mark this endtime for next run's start
+        rule['previous_endtime'] = endtime
 
-                time_taken = time.time() - run_start
+        time_taken = time.time() - run_start
 
-                # Write to ES that we've run this rule against this time period
-                body = {'rule_name': rule['name'],
-                        'endtime': endtime,
-                        'starttime': rule['original_starttime'],
-                        'matches': num_matches,
-                        'hits': max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
-                        '@timestamp': ts_now(),
-                        'time_taken': time_taken}
-                self.writeback('elastalert_status', body)
-
-                # Write metrics about the run to statsd
-                if self.statsd:
-                    try:
-                        self.statsd.gauge(
-                            'rule.time_taken', time_taken,
-                            tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
-                        self.statsd.gauge(
-                            'query.hits', self.thread_data.num_hits,
-                            tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
-                        self.statsd.gauge(
-                            'already_seen.hits', self.thread_data.num_dupes,
-                            tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
-                        self.statsd.gauge(
-                            'query.matches', num_matches,
-                            tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
-                        self.statsd.gauge(
-                            'query.alerts_sent', self.thread_data.alerts_sent,
-                            tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
-                    except BaseException as e:
-                        elastalert_logger.error("unable to send metrics:\n%s" % str(e))
-
-                    # Set final attributes on root span
-                    root_span.set_attribute("rule.num_matches", num_matches)
-                    root_span.set_attribute("rule.time_taken", time.time() - run_start)
-                    root_span.set_attribute("rule.num_hits", max(self.thread_data.num_hits, self.thread_data.cumulative_hits))
-                    
-                    return num_matches
-        except Exception as e:
-            # Record error on root span if it exists
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                current_span.record_exception(e, escaped=True)
-                current_span.set_status(Status(StatusCode.ERROR, str(e)))
-                # Also set error attributes directly on the span for visibility
-                current_span.set_attribute("error", True)
-                current_span.set_attribute("exception.type", e.__class__.__name__)
-                current_span.set_attribute("exception.message", str(e))
-            # Re-raise to maintain existing error handling
-            raise
+        # Write to ES that we've run this rule against this time period
+        body = {'rule_name': rule['name'],
+                'endtime': endtime,
+                'starttime': rule['original_starttime'],
+                'matches': num_matches,
+                'hits': max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
+                '@timestamp': ts_now(),
+                'time_taken': time_taken}
 
 
-    @trace_span("elastalert.init_rule")
+        if root_span and root_span.is_recording():
+            root_span.set_attribute("writeback.starttime", str(rule['original_starttime']))
+            root_span.set_attribute("writeback.endtime", str(endtime))
+            root_span.set_attribute("writeback.matches", num_matches)
+            root_span.set_attribute("writeback.hits", max(self.thread_data.num_hits, self.thread_data.cumulative_hits))
+            root_span.set_attribute("writeback.timestamp", str(ts_now()))
+            root_span.set_attribute("writeback.time_taken", str(time_taken))
+
+        self.writeback('elastalert_status', body)
+
+        # Write metrics about the run to statsd
+        if self.statsd:
+            try:
+                self.statsd.gauge(
+                    'rule.time_taken', time_taken,
+                    tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
+                self.statsd.gauge(
+                    'query.hits', self.thread_data.num_hits,
+                    tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
+                self.statsd.gauge(
+                    'already_seen.hits', self.thread_data.num_dupes,
+                    tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
+                self.statsd.gauge(
+                    'query.matches', num_matches,
+                    tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
+                self.statsd.gauge(
+                    'query.alerts_sent', self.thread_data.alerts_sent,
+                    tags={"elastalert_instance": self.statsd_instance_tag, "rule_name": rule['name']})
+            except BaseException as e:
+                elastalert_logger.error("unable to send metrics:\n%s" % str(e))
+
+            
+        return num_matches
+
+
     def init_rule(self, new_rule, new=True):
         ''' Copies some necessary non-config state from an exiting rule to a new rule. '''
         if not new and self.scheduler.get_job(job_id=new_rule['name']):
@@ -1450,7 +1627,6 @@ class ElastAlerter(object):
         self.rule_hashes = new_rule_hashes
 
 
-    @trace_span("elastalert.start")
     def start(self):
         """ Periodically go through each rule and run it """
         if self.starttime:
@@ -1499,7 +1675,6 @@ class ElastAlerter(object):
             self.sleep_for(sleep_duration)
 
 
-    @trace_span("elastalert.wait_until_responsive")
     def wait_until_responsive(self, timeout, clock=timeit.default_timer):
         """Wait until ElasticSearch becomes responsive (or too much time passes)."""
 
@@ -1546,7 +1721,6 @@ class ElastAlerter(object):
         self.handle_config_change()
 
 
-    @trace_span("elastalert.handle_pending_alerts")
     def handle_pending_alerts(self):
         self.thread_data.alerts_sent = 0
         self.send_pending_alerts()
@@ -1554,7 +1728,6 @@ class ElastAlerter(object):
             self.thread_data.alerts_sent, pretty_ts(ts_now(), ts_format=self.pretty_ts_format)))
 
 
-    @trace_span("elastalert.handle_config_change")
     def handle_config_change(self):
         if not self.args.pin_rules:
             self.load_rule_changes()
@@ -1647,17 +1820,20 @@ class ElastAlerter(object):
             elastalert_logger.info('Pausing %s until next run at %s' % (
             rule['name'], pretty_ts(rule['next_starttime'], ts_format=self.pretty_ts_format)))
 
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            current_span.set_attribute("reset_rule_schedule", str(rule))
+
     @trace_span("elastalert.stop")
     def stop(self):
         """ Stop an ElastAlert runner that's been started """
         self.running = False
 
-    @trace_span("elastalert.get_disabled_rules")
+
     def get_disabled_rules(self):
         """ Return disabled rules """
         return [rule['name'] for rule in self.disabled_rules]
 
-    @trace_span("elastalert.sleep_for")
     def sleep_for(self, duration):
         """ Sleep for a set duration """
         elastalert_logger.info("Sleeping for %s seconds" % (duration))
@@ -1817,6 +1993,7 @@ class ElastAlerter(object):
         else:
             writeback_body = body
 
+        
         for key in list(writeback_body.keys()):
             # Convert any datetime objects to timestamps
             if isinstance(writeback_body[key], datetime.datetime):
@@ -1832,9 +2009,25 @@ class ElastAlerter(object):
         try:
             index = self.writeback_es.resolve_writeback_index(self.writeback_index, doc_type)
             res = self.writeback_es.index(index=index, body=body)
+
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                current_span.set_attribute("writeback_index", str(index))
+                current_span.set_attribute("writeback_body", str(writeback_body))
+                current_span.set_attribute("writeback_response", str(res))
+
             return res
         except ElasticsearchException as e:
             elastalert_logger.exception("Error writing alert info to Elasticsearch: %s" % (e))
+            # Add error to current span as exception
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                current_span.record_exception(e, escaped=True)
+                current_span.set_status(Status(StatusCode.ERROR, str(e)))
+                # Also set error attributes directly on the span for visibility
+                current_span.set_attribute("error", True)
+                current_span.set_attribute("exception.type", e.__class__.__name__)
+                current_span.set_attribute("exception.message", str(e))
 
 
     @trace_span("elastalert.find_recent_pending_alerts")

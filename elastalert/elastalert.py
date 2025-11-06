@@ -1990,18 +1990,6 @@ class ElastAlerter(object):
         else:
             writeback_body = body
 
-        # Add writeback body to current span as attribute
-
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
-            # Convert writeback body to JSON string for span attribute
-            try:
-                writeback_body_str = json.dumps(writeback_body) if isinstance(writeback_body, (dict, list)) else str(writeback_body)
-                current_span.set_attribute("writeback_body", writeback_body_str)
-            except (TypeError, ValueError):
-                # If JSON serialization fails, use string representation
-                current_span.set_attribute("writeback_body", str(writeback_body))
-        
         
         for key in list(writeback_body.keys()):
             # Convert any datetime objects to timestamps
@@ -2018,6 +2006,13 @@ class ElastAlerter(object):
         try:
             index = self.writeback_es.resolve_writeback_index(self.writeback_index, doc_type)
             res = self.writeback_es.index(index=index, body=body)
+
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                current_span.set_attribute("writeback_index", str(index))
+                current_span.set_attribute("writeback_body", str(writeback_body))
+                current_span.set_attribute("writeback_response", str(res))
+
             return res
         except ElasticsearchException as e:
             elastalert_logger.exception("Error writing alert info to Elasticsearch: %s" % (e))

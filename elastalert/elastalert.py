@@ -92,7 +92,7 @@ def trace_span(span_name):
             with tracer.start_as_current_span(span_name) as span:
                 try:
                     # Set method name attribute - use the original function's name
-                    span.set_attribute("method.name", original_func.__name__)
+                    span.add_event("method.name", original_func.__name__)
                     
                     # Try to get rule name from various sources
                     rule_name = None
@@ -131,11 +131,11 @@ def trace_span(span_name):
                             # Check if this method exists as an instance method on the class
                             if not is_static and hasattr(first_arg, original_func.__name__):
                                 # Likely an instance method
-                                span.set_attribute("method.class", class_name)
+                                span.add_event("method.class", class_name)
                             elif is_static:
                                 # Static method with an object as first parameter
                                 # Still record the class if it's an object
-                                span.set_attribute("method.class", class_name)
+                                span.add_event("method.class", class_name)
                     
                     return original_func(*args, **kwargs)
                 except Exception as e:
@@ -365,7 +365,7 @@ class ElastAlerter(object):
         
         current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
-            current_span.set_attribute("query", str(query))
+            current_span.add_event("query", str(query))
 
         return query
 
@@ -1304,10 +1304,6 @@ class ElastAlerter(object):
             root_span.set_attribute("rule.index", rule.get('index', 'unknown'))
             
             # Elasticsearch connection details
-            root_span.set_attribute("es.host", rule.get('es_host', 'unknown'))
-            root_span.set_attribute("es.port", rule.get('es_port', 0))
-
-            #add as event not as attribute
             root_span.add_event("es.configuration", {
                 "es_host": rule.get('es_host', 'unknown'),
                 "es_port": rule.get('es_port', 0)

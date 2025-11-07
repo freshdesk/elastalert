@@ -365,9 +365,7 @@ class ElastAlerter(object):
         
         current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
-            current_span.add_event("query", {
-                "query": str(query)
-            })
+            current_span.set_attribute("query", str(query))
 
         return query
 
@@ -1306,10 +1304,8 @@ class ElastAlerter(object):
             root_span.set_attribute("rule.index", rule.get('index', 'unknown'))
             
             # Elasticsearch connection details
-            root_span.add_event("es.configuration", {
-                "es_host": rule.get('es_host', 'unknown'),
-                "es_port": rule.get('es_port', 0)
-            })
+            root_span.set_attribute("es.host", rule.get('es_host', 'unknown'))
+            root_span.set_attribute("es.port", rule.get('es_port', 0))
             
             # Rule configuration details
             # if rule.get('query_key'):

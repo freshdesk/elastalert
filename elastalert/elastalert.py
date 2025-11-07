@@ -1180,6 +1180,14 @@ class ElastAlerter(object):
                 else:
                     rule['bucket_offset_delta'] = offset
 
+            #add event not as attribute
+            current_span = trace.get_current_span()
+            if current_span and current_span.is_recording():
+                current_span.add_event("adjust_start_time_for_interval_sync", {
+                    "rule": str(rule),
+                    "endtime": str(endtime)
+                })
+
     @trace_span("elastalert.get_segment_size")
     def get_segment_size(self, rule):
         """ The segment size is either buffer_size for queries which can overlap or run_every for queries

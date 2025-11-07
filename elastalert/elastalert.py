@@ -92,7 +92,7 @@ def trace_span(span_name):
             with tracer.start_as_current_span(span_name) as span:
                 try:
                     # Set method name attribute - use the original function's name
-                    span.add_event("method.name", original_func.__name__)
+                    span.set_attribute("method.name", original_func.__name__)
                     
                     # Try to get rule name from various sources
                     rule_name = None

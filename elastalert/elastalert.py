@@ -131,11 +131,11 @@ def trace_span(span_name):
                             # Check if this method exists as an instance method on the class
                             if not is_static and hasattr(first_arg, original_func.__name__):
                                 # Likely an instance method
-                                span.add_event("method.class", class_name)
+                                span.set_attribute("method.class", class_name)
                             elif is_static:
                                 # Static method with an object as first parameter
                                 # Still record the class if it's an object
-                                span.add_event("method.class", class_name)
+                                span.set_attribute("method.class", class_name)
                     
                     return original_func(*args, **kwargs)
                 except Exception as e:

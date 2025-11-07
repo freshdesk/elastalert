@@ -365,7 +365,9 @@ class ElastAlerter(object):
         
         current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
-            current_span.add_event("query", str(query))
+            current_span.add_event("query", {
+                "query": str(query)
+            })
 
         return query
 

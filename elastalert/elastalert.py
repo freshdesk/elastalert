@@ -1306,6 +1306,12 @@ class ElastAlerter(object):
             # Elasticsearch connection details
             root_span.set_attribute("es.host", rule.get('es_host', 'unknown'))
             root_span.set_attribute("es.port", rule.get('es_port', 0))
+
+            #add as event not as attribute
+            root_span.add_event("es.configuration", {
+                "es_host": rule.get('es_host', 'unknown'),
+                "es_port": rule.get('es_port', 0)
+            })
             
             # Rule configuration details
             # if rule.get('query_key'):

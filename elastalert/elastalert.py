@@ -46,10 +46,9 @@ from elastalert.util import (add_raw_postfix, cronite_datetime_to_timestamp, dt_
                              should_scrolling_continue, total_seconds, ts_add, ts_now, ts_to_dt, unix_to_dt,
                              ts_utc_to_tz, dt_to_ts_with_format)
 
-from elastalert.traceproviders import init_tracer
+from elastalert.traceproviders import init_tracer, trace_span
 from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
-from functools import wraps
 
 # Global tracer variable - initialized once and accessible from any method
 _global_tracer = None
@@ -61,100 +60,6 @@ def get_tracer():
         init_tracer()  # Initialize tracing
         _global_tracer = trace.get_tracer(__name__)
     return _global_tracer
-
-def trace_span(span_name):
-    """Decorator to automatically create a span for a method (works with both instance and static methods)
-    
-    Usage:
-        # For instance methods:
-        @trace_span("method.name")
-        def instance_method(self, ...):
-            ...
-        
-        # For static methods (apply trace_span BEFORE @staticmethod):
-        @trace_span("method.name")
-        @staticmethod
-        def static_method(...):
-            ...
-    """
-    def decorator(func):
-        # Handle staticmethod objects - extract the underlying function
-        if isinstance(func, staticmethod):
-            original_func = func.__func__
-            is_static = True
-        else:
-            original_func = func
-            is_static = False
-        
-        @wraps(original_func)
-        def wrapper(*args, **kwargs):
-            tracer = get_tracer()
-            with tracer.start_as_current_span(span_name) as span:
-                try:
-                    # Set method name attribute - use the original function's name
-                    span.set_attribute("method.name", original_func.__name__)
-                    
-                    # Try to get rule name from various sources
-                    rule_name = None
-                    
-                    # First, try to get from thread_data (set in run_rule)
-                    # Try to get from self if it's an instance method
-                    if not is_static and args:
-                        self_obj = args[0]
-                        if hasattr(self_obj, 'thread_data'):
-                            try:
-                                rule_name = getattr(self_obj.thread_data, 'current_rule_name', None)
-                            except (AttributeError, RuntimeError):
-                                pass
-                    
-                    # Second, try to find rule in method arguments
-                    if not rule_name:
-                        # Check args for a 'rule' parameter (could be dict with 'name' key)
-                        for arg in args:
-                            if isinstance(arg, dict) and 'name' in arg:
-                                rule_name = arg.get('name', 'unknown')
-                                break
-                    
-                    # Add rule name to span if found
-                    if rule_name:
-                        span.set_attribute("rule.name", rule_name)
-                    
-                    # Try to detect if this is an instance method or static method
-                    # For instance methods, args[0] is 'self' (an instance of the class)
-                    # For static methods, args might be empty or args[0] is a regular parameter
-                    if args:
-                        first_arg = args[0]
-                        # Check if first argument is 'self' (instance method)
-                        # by seeing if it's an instance of a class and has the method
-                        if hasattr(first_arg, '__class__'):
-                            class_name = first_arg.__class__.__name__
-                            # Check if this method exists as an instance method on the class
-                            if not is_static and hasattr(first_arg, original_func.__name__):
-                                # Likely an instance method
-                                span.set_attribute("method.class", class_name)
-                            elif is_static:
-                                # Static method with an object as first parameter
-                                # Still record the class if it's an object
-                                span.set_attribute("method.class", class_name)
-                    
-                    return original_func(*args, **kwargs)
-                except Exception as e:
-                    # Record error on span with detailed exception information
-                    span.record_exception(e, escaped=True)
-                    # Set status to ERROR - this must be done before span ends
-                    span.set_status(Status(StatusCode.ERROR, str(e)))
-                    # Also set error attributes directly on the span for visibility
-                    span.set_attribute("error", True)
-                    span.set_attribute("exception.type", e.__class__.__name__)
-                    span.set_attribute("exception.message", str(e))
-                    # Re-raise the exception
-                    raise
-        
-        # If the original func was a staticmethod, return a staticmethod-wrapped wrapper
-        if is_static:
-            return staticmethod(wrapper)
-        return wrapper
-    return decorator
 
 
 class ElastAlerter(object):

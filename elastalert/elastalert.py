@@ -958,78 +958,88 @@ class ElastAlerter(object):
             end = ts_utc_to_tz(end, rule.get('query_timezone'))
 
         current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
-            current_span.add_event(
-                name="query",
-                attributes={
-                    "starttime": str(start),
-                    "endtime": str(end)
-                }
-            )
-                
+
         # Reset hit counter and query
         rule_inst = rule['type']
         rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
         index = self.get_index(rule, start, end)
         if isinstance(rule_inst, NewTermsRule):
             data = self.get_terms_data(rule, start, end)
-            current_span.add_event(
-                name="NewTermsRule",
-                attributes={
-                    "starttime": str(start),
-                    "endtime": str(end)
-                }
-            )
-        elif rule.get('use_count_query'):
-            data = self.get_hits_count(rule, start, end, index)
-            current_span.add_event(
-                name="use_count_query",
-                attributes={
-                    "starttime": str(start),
-                    "endtime": str(end)
-                }
-            )
-        elif rule.get('use_terms_query'):
-            data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
-            current_span.add_event(
-                name="use_terms_query",
-                attributes={
-                    "starttime": str(start),
-                    "endtime": str(end)
-                }
-            )
-        elif isinstance(rule_inst, ErrorRateRule):
-            data = self.get_error_rate(rule, start, end)
-            current_span.add_event(
-                name="ErrorRateRule",
-                attributes={
-                    "starttime": str(start),
-                    "endtime": str(end)
-                }
-            )
-        elif rule.get('aggregation_query_element'):
-            elastalert_logger.info("in agg query element")
-            if isinstance(rule_inst, AdvancedQueryRule):
-                data = self.get_adv_query_aggregation(rule, start, end,index)
+            if current_span and current_span.is_recording():
                 current_span.add_event(
-                    name="aggregation_query_element.AdvancedQueryRule",
+                    name="NewTermsRule",
                     attributes={
                         "starttime": str(start),
                         "endtime": str(end)
                     }
                 )
+        elif rule.get('use_count_query'):
+            data = self.get_hits_count(rule, start, end, index)
+            if current_span and current_span.is_recording():
+                current_span.add_event(
+                    name="use_count_query",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
+        elif rule.get('use_terms_query'):
+            data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
+            if current_span and current_span.is_recording():
+                current_span.add_event(
+                    name="use_terms_query",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
+        elif isinstance(rule_inst, ErrorRateRule):
+            data = self.get_error_rate(rule, start, end)
+
+            if current_span and current_span.is_recording():
+                current_span.add_event(
+                    name="ErrorRateRule",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
+        elif rule.get('aggregation_query_element'):
+            elastalert_logger.info("in agg query element")
+            if isinstance(rule_inst, AdvancedQueryRule):
+                data = self.get_adv_query_aggregation(rule, start, end,index)
+
+                if current_span and current_span.is_recording():
+                    current_span.add_event(
+                        name="aggregation_query_element.AdvancedQueryRule",
+                        attributes={
+                            "starttime": str(start),
+                            "endtime": str(end)
+                        }
+                    )
             else:
                 data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
+                
+                if current_span and current_span.is_recording():
+                    current_span.add_event(
+                        name="aggregation_query_element.not_AdvancedQueryRule",
+                        attributes={
+                            "starttime": str(start),
+                            "endtime": str(end)
+                        }
+                    )
+
+        else:
+            data = self.get_hits(rule, start, end, index, scroll)
+            if current_span and current_span.is_recording():
                 current_span.add_event(
-                    name="aggregation_query_element.not_AdvancedQueryRule",
+                    name="get_hits",
                     attributes={
                         "starttime": str(start),
                         "endtime": str(end)
                     }
                 )
 
-        else:
-            data = self.get_hits(rule, start, end, index, scroll)
             if data:
                 old_len = len(data)
                 data = self.remove_duplicate_events(data, rule)
@@ -1198,11 +1208,11 @@ class ElastAlerter(object):
 
             #add event not as attribute
             current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                current_span.add_event("adjust_start_time_for_interval_sync", {
-                    "rule": str(rule),
-                    "endtime": str(endtime)
-                })
+        if current_span and current_span.is_recording():
+            current_span.add_event("adjust_start_time_for_interval_sync", {
+                "rule": str(rule),
+                "endtime": str(endtime)
+            })
 
     @trace_span("elastalert.get_segment_size")
     def get_segment_size(self, rule):

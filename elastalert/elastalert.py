@@ -46,7 +46,7 @@ from elastalert.util import (add_raw_postfix, cronite_datetime_to_timestamp, dt_
                              should_scrolling_continue, total_seconds, ts_add, ts_now, ts_to_dt, unix_to_dt,
                              ts_utc_to_tz, dt_to_ts_with_format)
 
-from elastalert.traceproviders import init_tracer, trace_span
+from elastalert.traceproviders import init_tracer, trace_span, get_recording_span
 from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 
@@ -236,6 +236,8 @@ class ElastAlerter(object):
         :param sort: If true, sort results by timestamp. (Default True)
         :return: A query dictionary to pass to Elasticsearch.
         """
+        span = get_recording_span()
+
         starttime = to_ts_func(starttime)
         endtime = to_ts_func(endtime)
         filters = copy.copy(filters)
@@ -257,9 +259,8 @@ class ElastAlerter(object):
         if sort:
             query['sort'] = [{timestamp_field: {'order': 'desc' if desc else 'asc'}}]
         
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
-            current_span.add_event(
+        if span:
+            span.add_event(
                 name="query",
                 attributes={
                     "query": str(query)
@@ -363,6 +364,8 @@ class ElastAlerter(object):
         :return: A list of processed _source dictionaries.
         """
 
+        span = get_recording_span()
+
         processed_hits = []
         for hit in hits:
             # Merge fields and _source
@@ -398,10 +401,8 @@ class ElastAlerter(object):
             processed_hits.append(hit['_source'])
 
         # Add span attributes for processed hits (using counts and samples, not full data)
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
-
-            current_span.add_event(
+        if span:
+            span.add_event(
                 name="processed_hits",
                 attributes={
                     "count": len(processed_hits),
@@ -420,6 +421,7 @@ class ElastAlerter(object):
         :param endtime: The latest time to query.
         :return: A list of hits, bounded by rule['max_query_size'] (or self.max_query_size).
         """
+        span = get_recording_span()
 
         query = self.get_query(
             rule['filter'],
@@ -432,14 +434,12 @@ class ElastAlerter(object):
         request = get_msearch_query(query,rule)
 
         # Add request to current span as attribute
-        current_span = trace.get_current_span()
-
-        if current_span and current_span.is_recording():
+        if span:
             # Convert request to JSON string for span attribute
             try:
                 request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
 
-                current_span.add_event(
+                span.add_event(
                     name="msearch_request",
                     attributes={
                         "request": request_str
@@ -448,7 +448,7 @@ class ElastAlerter(object):
 
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.add_event(
+                span.add_event(
                     name="msearch_request",
                     attributes={
                         "request": str(request)
@@ -467,8 +467,8 @@ class ElastAlerter(object):
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
             
-            if current_span and current_span.is_recording():
-                current_span.add_event(
+            if span:
+                span.add_event(
                     name="msearch_response",
                     attributes={
                         "response": json.dumps(res)
@@ -574,6 +574,8 @@ class ElastAlerter(object):
         :param endtime: The latest time to query.
         :return: A dictionary mapping timestamps to number of hits for that time period.
         """
+        span = get_recording_span()
+
         query = self.get_query(
             rule['filter'],
             starttime,
@@ -587,12 +589,11 @@ class ElastAlerter(object):
         request = get_msearch_query(query,rule)
 
         # Add request to current span as attribute
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
+        if span:
             # Convert request to JSON string for span attribute
             try:
                 request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
-                current_span.add_event(
+                span.add_event(
                     name="msearch_request",
                     attributes={
                         "request": request_str
@@ -601,7 +602,7 @@ class ElastAlerter(object):
 
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.add_event(
+                span.add_event(
                     name="msearch_request",
                     attributes={
                         "request": str(request)
@@ -614,12 +615,12 @@ class ElastAlerter(object):
             res = res['responses'][0]
 
             # Add response to current span as attribute
-            if current_span and current_span.is_recording():
+            if span:
                 # Convert response to JSON string for span attribute
                 try:
                     response_str = json.dumps(res) if isinstance(res, (dict, list)) else str(res)
 
-                    current_span.add_event(
+                    span.add_event(
                         name="msearch_response",
                         attributes={
                             "response": response_str
@@ -628,7 +629,7 @@ class ElastAlerter(object):
 
                 except (TypeError, ValueError):
                     # If JSON serialization fails, use string representation
-                    current_span.add_event(
+                    span.add_event(
                         name="msearch_response",
                         attributes={
                             "response": str(res)
@@ -662,6 +663,7 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.get_hits_terms")
     def get_hits_terms(self, rule, starttime, endtime, index, key, qk=None, size=None):
+        span = get_recording_span()
         rule_filter = copy.copy(rule['filter'])
         if qk:
             qk = str(qk)
@@ -697,12 +699,11 @@ class ElastAlerter(object):
         request = get_msearch_query(query,rule)
 
         # Add request to current span as attribute
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
+        if span:
             # Convert request to JSON string for span attribute
             try:
                 request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
-                current_span.add_event(
+                span.add_event(
                     name="msearch_request",
                     attributes={
                         "request": request_str
@@ -710,7 +711,7 @@ class ElastAlerter(object):
                 )
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.add_event(
+                span.add_event(
                     name="msearch_request",
                     attributes={
                         "request": str(request)
@@ -723,12 +724,12 @@ class ElastAlerter(object):
             res = res['responses'][0]
 
             # Add response to current span as attribute
-            if current_span and current_span.is_recording():
+            if span:
                 # Convert response to JSON string for span attribute
                 try:
                     response_str = json.dumps(res) if isinstance(res, (dict, list)) else str(res)
 
-                    current_span.add_event(
+                    span.add_event(
                         name="msearch_response",
                         attributes={
                             "response": response_str
@@ -737,7 +738,7 @@ class ElastAlerter(object):
 
                 except (TypeError, ValueError):
                     # If JSON serialization fails, use string representation
-                    current_span.add_event(
+                    span.add_event(
                         name="msearch_response",
                         attributes={
                             "response": str(res)
@@ -912,6 +913,7 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.remove_old_events")
     def remove_old_events(self, rule):
+        span = get_recording_span()
         # Anything older than the buffer time we can forget
         now = ts_now()
         remove = []
@@ -926,12 +928,11 @@ class ElastAlerter(object):
                 remove.append(_id)
         list(map(rule['processed_hits'].pop, remove))
 
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
-            current_span.add_event(
+        if span:
+            span.add_event(
                 name="remove_old_events",
                 attributes={
-                    "remove": str(remove)
+                    "remove": str(remove[:10])
                 }
             )
 
@@ -946,6 +947,7 @@ class ElastAlerter(object):
         Returns True on success and False on failure.
         """
 
+        span = get_recording_span()
 
         if start is None:
             start = self.get_index_start(rule['index'])
@@ -957,37 +959,88 @@ class ElastAlerter(object):
             start = ts_utc_to_tz(start, rule.get('query_timezone'))
             end = ts_utc_to_tz(end, rule.get('query_timezone'))
 
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                current_span.add_event(
-                    name="query",
-                    attributes={
-                        "starttime": str(start),
-                        "endtime": str(end)
-                    }
-                )
-                
+
         # Reset hit counter and query
         rule_inst = rule['type']
         rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
         index = self.get_index(rule, start, end)
         if isinstance(rule_inst, NewTermsRule):
             data = self.get_terms_data(rule, start, end)
+            if span:
+                span.add_event(
+                    name="NewTermsRule",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
         elif rule.get('use_count_query'):
             data = self.get_hits_count(rule, start, end, index)
+            if span:
+                span.add_event(
+                    name="use_count_query",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
         elif rule.get('use_terms_query'):
             data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
+            if span:
+                span.add_event(
+                    name="use_terms_query",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
         elif isinstance(rule_inst, ErrorRateRule):
             data = self.get_error_rate(rule, start, end)
+
+            if span:
+                span.add_event(
+                    name="ErrorRateRule",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
         elif rule.get('aggregation_query_element'):
             elastalert_logger.info("in agg query element")
             if isinstance(rule_inst, AdvancedQueryRule):
                 data = self.get_adv_query_aggregation(rule, start, end,index)
+
+                if span:
+                    span.add_event(
+                        name="aggregation_query_element.AdvancedQueryRule",
+                        attributes={
+                            "starttime": str(start),
+                            "endtime": str(end)
+                        }
+                    )
             else:
                 data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
+                
+                if span:
+                    span.add_event(
+                        name="aggregation_query_element.not_AdvancedQueryRule",
+                        attributes={
+                            "starttime": str(start),
+                            "endtime": str(end)
+                        }
+                    )
 
         else:
             data = self.get_hits(rule, start, end, index, scroll)
+            if span:
+                span.add_event(
+                    name="get_hits",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
+
             if data:
                 old_len = len(data)
                 data = self.remove_duplicate_events(data, rule)
@@ -995,15 +1048,14 @@ class ElastAlerter(object):
 
 
         # Add data to current span as attribute
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
+        if span:
             # Convert data to JSON string for span attribute
             try:
                 data_str = json.dumps(data) if isinstance(data, (dict, list)) else str(data)
-                current_span.set_attribute("data", data_str)
+                span.set_attribute("data", data_str)
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.set_attribute("data", str(data))
+                span.set_attribute("data", str(data))
 
 
         # There was an exception while querying
@@ -1077,7 +1129,7 @@ class ElastAlerter(object):
     # @trace_span("elastalert.set_starttime")
     def set_starttime(self, rule, endtime):
         """ Given a rule and an endtime, sets the appropriate starttime for it. """
-        current_span = trace.get_current_span()
+        span = get_recording_span()
 
         # This means we are starting fresh
         if 'starttime' not in rule:
@@ -1090,8 +1142,8 @@ class ElastAlerter(object):
                     self.adjust_start_time_for_interval_sync(rule, endtime)
                     rule['minimum_starttime'] = rule['starttime']
                     #add starttime to span attribute
-                    if current_span and current_span.is_recording():
-                        current_span.set_attribute("starttime", rule['starttime'])
+                    if span:
+                        span.set_attribute("starttime", rule['starttime'])
 
                     return None
 
@@ -1125,8 +1177,8 @@ class ElastAlerter(object):
                 rule['starttime'] = endtime - rule['timeframe']
 
         #add starttime to span attribute
-        if current_span and current_span.is_recording():
-            current_span.set_attribute("starttime", rule['starttime'])
+        if span:
+            span.set_attribute("starttime", rule['starttime'])
 
 
     @trace_span("elastalert.adjust_start_time_for_overlapping_agg_query")
@@ -1140,6 +1192,7 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.adjust_start_time_for_interval_sync")
     def adjust_start_time_for_interval_sync(self, rule, endtime):
+        span = get_recording_span()
         # If aggregation query adjust bucket offset
         if rule.get('aggregation_query_element'):
 
@@ -1156,36 +1209,56 @@ class ElastAlerter(object):
                     rule['bucket_offset_delta'] = offset
 
             #add event not as attribute
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                current_span.add_event("adjust_start_time_for_interval_sync", {
-                    "rule": str(rule),
-                    "endtime": str(endtime)
-                })
+        if span:
+            span.add_event("adjust_start_time_for_interval_sync", {
+                "rule": str(rule),
+                "starttime": str(rule['starttime']),
+                "endtime": str(endtime)
+            })
 
     @trace_span("elastalert.get_segment_size")
     def get_segment_size(self, rule):
         """ The segment size is either buffer_size for queries which can overlap or run_every for queries
         which must be strictly separate. This mimicks the query size for when ElastAlert is running continuously. """
         
-        current_span = trace.get_current_span()
+        span = get_recording_span()
 
         if not rule.get('use_count_query') and not rule.get('use_terms_query') and not rule.get('aggregation_query_element'):
-            if current_span and current_span.is_recording():
-                current_span.set_attribute("segment_size", str(rule.get('buffer_time', self.buffer_time)))
+            if span:
+                span.add_event(
+                    name="get_segment_size.not_use_count_query_and_not_use_terms_query_and_not_aggregation_query_element",
+                    attributes={
+                        "segment_size": str(rule.get('buffer_time', self.buffer_time))
+                    }
+                )
             return rule.get('buffer_time', self.buffer_time)
         elif rule.get('aggregation_query_element'):
             if rule.get('use_run_every_query_size'):
-                if current_span and current_span.is_recording():
-                    current_span.set_attribute("segment_size", str(self.run_every))
+                if span:
+                    span.add_event(
+                        name="get_segment_size.use_run_every_query_size",
+                        attributes={
+                            "segment_size": str(self.run_every)
+                        }
+                    )
                 return self.run_every
             else:
-                if current_span and current_span.is_recording():
-                    current_span.set_attribute("segment_size", str(rule.get('buffer_time', self.buffer_time)))
+                if span:
+                    span.add_event(
+                        name="get_segment_size.not_use_run_every_query_size",
+                        attributes={
+                            "segment_size": str(rule.get('buffer_time', self.buffer_time))
+                        }
+                    )
                 return rule.get('buffer_time', self.buffer_time)
         else:
-            if current_span and current_span.is_recording():
-                current_span.set_attribute("segment_size", str(self.run_every))
+            if span:
+                span.add_event(
+                    name="get_segment_size.not_use_count_query_and_not_use_terms_query_and_not_aggregation_query_element_",
+                    attributes={
+                        "segment_size": str(self.run_every)
+                    }
+                )
             return self.run_every
 
 
@@ -1276,11 +1349,12 @@ class ElastAlerter(object):
         :param endtime: The latest timestamp to query.
         :return: The number of matches that the rule produced.
         """
+        root_span = get_recording_span()
+
         run_start = time.time()
         
         # Get the current span (created by @trace_span decorator) and add comprehensive attributes
-        root_span = trace.get_current_span()
-        if root_span and root_span.is_recording():
+        if root_span:
             # Rule identification
             # root_span.set_attribute("rule.name", rule.get('name', 'unknown'))
             # root_span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__ if rule.get('type') else 'unknown')
@@ -1295,9 +1369,7 @@ class ElastAlerter(object):
                 attributes={
                     "name": rule.get('name', 'unknown'),
                     "type": rule.get('type', {}).__class__.__name__ if rule.get('type') else 'unknown',
-                    "index": rule.get('index', 'unknown'),
-                    "es_host": rule.get('es_host', 'unknown'),
-                    "es_port": rule.get('es_port', 0)
+                    "index": rule.get('index', 'unknown')
                 }
             )
             
@@ -1395,9 +1467,8 @@ class ElastAlerter(object):
 
             if self.is_silenced(rule['name'] + "._silence") or self.is_silenced(silence_cache_key):
                 elastalert_logger.info('Ignoring match for silenced rule %s' % (silence_cache_key,))
-                current_span = trace.get_current_span()
-                if current_span and current_span.is_recording():
-                    current_span.set_attribute("rule.silenced", True)
+                if root_span:
+                    root_span.set_attribute("rule.silenced", True)
                 continue
 
             if rule['realert']:
@@ -1437,18 +1508,17 @@ class ElastAlerter(object):
                 'time_taken': time_taken}
 
 
-        if root_span and root_span.is_recording():
-            root_span.add_event(
-                name="writeback",
-                attributes={
-                    "starttime": str(rule['original_starttime']),
-                    "endtime": str(endtime),
-                    "matches": num_matches,
-                    "hits": max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
-                    "timestamp": str(ts_now()),
-                    "time_taken": str(time_taken)
-                }
-            )
+        root_span.add_event(
+            name="writeback",
+            attributes={
+                "starttime": str(rule['original_starttime']),
+                "endtime": str(endtime),
+                "matches": num_matches,
+                "hits": max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
+                "timestamp": str(ts_now()),
+                "time_taken": str(time_taken)
+            }
+        )
 
         self.writeback('elastalert_status', body)
 
@@ -1810,6 +1880,8 @@ class ElastAlerter(object):
     @trace_span("elastalert.reset_rule_schedule")
     def reset_rule_schedule(self, rule):
         # We hit the end of a execution schedule, pause ourselves until next run
+        span = get_recording_span()
+
         if rule.get('limit_execution') and rule['next_starttime']:
             self.scheduler.modify_job(job_id=rule['name'], next_run_time=rule['next_starttime'])
             # If we are preventing covering non-scheduled time periods, reset min_starttime and previous_endtime
@@ -1819,9 +1891,8 @@ class ElastAlerter(object):
             elastalert_logger.info('Pausing %s until next run at %s' % (
             rule['name'], pretty_ts(rule['next_starttime'], ts_format=self.pretty_ts_format)))
 
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
-            current_span.set_attribute("reset_rule_schedule", str(rule))
+        if span:
+            span.set_attribute("reset_rule_schedule", str(rule))
 
     @trace_span("elastalert.stop")
     def stop(self):
@@ -1987,6 +2058,8 @@ class ElastAlerter(object):
     @trace_span("elastalert.writeback")
     def writeback(self, doc_type, body, rule=None, match_body=None):
         # ES 2.0 - 2.3 does not support dots in field names.
+        span = get_recording_span()
+
         if self.replace_dots_in_field_names:
             writeback_body = replace_dots_in_field_names(body)
         else:
@@ -2009,9 +2082,8 @@ class ElastAlerter(object):
             index = self.writeback_es.resolve_writeback_index(self.writeback_index, doc_type)
             res = self.writeback_es.index(index=index, body=body)
 
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                current_span.add_event(
+            if span:
+                span.add_event(
                     name="writeback",
                     attributes={
                         "index": str(index),
@@ -2024,14 +2096,13 @@ class ElastAlerter(object):
         except ElasticsearchException as e:
             elastalert_logger.exception("Error writing alert info to Elasticsearch: %s" % (e))
             # Add error to current span as exception
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                current_span.record_exception(e, escaped=True)
-                current_span.set_status(Status(StatusCode.ERROR, str(e)))
+            if span:
+                span.record_exception(e, escaped=True)
+                span.set_status(Status(StatusCode.ERROR, str(e)))
                 # Also set error attributes directly on the span for visibility
-                current_span.set_attribute("error", True)
-                current_span.set_attribute("exception.type", e.__class__.__name__)
-                current_span.set_attribute("exception.message", str(e))
+                span.set_attribute("error", True)
+                span.set_attribute("exception.type", e.__class__.__name__)
+                span.set_attribute("exception.message", str(e))
 
 
     @trace_span("elastalert.find_recent_pending_alerts")

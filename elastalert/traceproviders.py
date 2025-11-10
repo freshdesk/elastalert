@@ -225,3 +225,10 @@ def trace_span(span_name):
             return staticmethod(wrapper)
         return wrapper
     return decorator
+
+
+def get_recording_span():
+    current_span = trace.get_current_span()
+    if current_span and current_span.is_recording():
+        return current_span
+    return None

@@ -17,7 +17,7 @@ from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 
 # Import tracing utilities from traceproviders
-from elastalert.traceproviders import init_tracer, trace_span
+from elastalert.traceproviders import init_tracer, trace_span, get_recording_span
 
 
 class RuleType(object):
@@ -135,10 +135,16 @@ class BlacklistRule(CompareRule):
         super(BlacklistRule, self).__init__(rules, args=None)
         self.expand_entries('blacklist')
 
+    @trace_span("ruletypes.BlacklistRule.compare")
     def compare(self, event):
+        span = get_recording_span()
         term = lookup_es_key(event, self.rules['compare_key'])
         if term in self.rules['blacklist']:
+            if span:
+                span.set_attribute("blacklist_match", True)
             return True
+        if span:
+            span.set_attribute("blacklist_match", False)
         return False
 
 
@@ -1005,25 +1011,25 @@ class NewTermsRule(RuleType):
 
     @trace_span("ruletypes.NewTermsRule.get_terms_data")
     def get_terms_data(self, es, starttime, endtime, field, request_timeout= None):
+        span = get_recording_span()
         terms = []
         counts = []
         query = self.get_new_term_query(starttime,endtime,field)
         request = get_msearch_query(query,self.rules)
         
         # Add query,request to current span as attribute
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
+        if span:
             # Convert query to JSON string for span attribute
             try:
                 query_str = json.dumps(query) if isinstance(query, (dict, list)) else str(query)
-                current_span.set_attribute("query", query_str)
+                span.set_attribute("query", query_str)
                 request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
-                current_span.set_attribute("msearch_request", request_str)
+                span.set_attribute("msearch_request", request_str)
 
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.set_attribute("query", str(query))
-                current_span.set_attribute("msearch_request", str(request))
+                span.set_attribute("query", str(query))
+                span.set_attribute("msearch_request", str(request))
 
 
         if request_timeout == None:

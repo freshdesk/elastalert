@@ -957,15 +957,15 @@ class ElastAlerter(object):
             start = ts_utc_to_tz(start, rule.get('query_timezone'))
             end = ts_utc_to_tz(end, rule.get('query_timezone'))
 
-            current_span = trace.get_current_span()
-            if current_span and current_span.is_recording():
-                current_span.add_event(
-                    name="query",
-                    attributes={
-                        "starttime": str(start),
-                        "endtime": str(end)
-                    }
-                )
+        current_span = trace.get_current_span()
+        if current_span and current_span.is_recording():
+            current_span.add_event(
+                name="query",
+                attributes={
+                    "starttime": str(start),
+                    "endtime": str(end)
+                }
+            )
                 
         # Reset hit counter and query
         rule_inst = rule['type']
@@ -973,18 +973,60 @@ class ElastAlerter(object):
         index = self.get_index(rule, start, end)
         if isinstance(rule_inst, NewTermsRule):
             data = self.get_terms_data(rule, start, end)
+            current_span.add_event(
+                name="NewTermsRule",
+                attributes={
+                    "starttime": str(start),
+                    "endtime": str(end)
+                }
+            )
         elif rule.get('use_count_query'):
             data = self.get_hits_count(rule, start, end, index)
+            current_span.add_event(
+                name="use_count_query",
+                attributes={
+                    "starttime": str(start),
+                    "endtime": str(end)
+                }
+            )
         elif rule.get('use_terms_query'):
             data = self.get_hits_terms(rule, start, end, index, rule['query_key'])
+            current_span.add_event(
+                name="use_terms_query",
+                attributes={
+                    "starttime": str(start),
+                    "endtime": str(end)
+                }
+            )
         elif isinstance(rule_inst, ErrorRateRule):
             data = self.get_error_rate(rule, start, end)
+            current_span.add_event(
+                name="ErrorRateRule",
+                attributes={
+                    "starttime": str(start),
+                    "endtime": str(end)
+                }
+            )
         elif rule.get('aggregation_query_element'):
             elastalert_logger.info("in agg query element")
             if isinstance(rule_inst, AdvancedQueryRule):
                 data = self.get_adv_query_aggregation(rule, start, end,index)
+                current_span.add_event(
+                    name="aggregation_query_element.AdvancedQueryRule",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
             else:
                 data = self.get_hits_aggregation(rule, start, end, index, rule.get('query_key', None))
+                current_span.add_event(
+                    name="aggregation_query_element.not_AdvancedQueryRule",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
 
         else:
             data = self.get_hits(rule, start, end, index, scroll)
@@ -995,7 +1037,6 @@ class ElastAlerter(object):
 
 
         # Add data to current span as attribute
-        current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
             # Convert data to JSON string for span attribute
             try:
@@ -1172,20 +1213,42 @@ class ElastAlerter(object):
 
         if not rule.get('use_count_query') and not rule.get('use_terms_query') and not rule.get('aggregation_query_element'):
             if current_span and current_span.is_recording():
-                current_span.set_attribute("segment_size", str(rule.get('buffer_time', self.buffer_time)))
+
+                current_span.add_event(
+                    name="get_segment_size.not_use_count_query_and_not_use_terms_query_and_not_aggregation_query_element",
+                    attributes={
+                        "segment_size": str(rule.get('buffer_time', self.buffer_time))
+                    }
+                )
             return rule.get('buffer_time', self.buffer_time)
         elif rule.get('aggregation_query_element'):
             if rule.get('use_run_every_query_size'):
                 if current_span and current_span.is_recording():
-                    current_span.set_attribute("segment_size", str(self.run_every))
+                    current_span.add_event(
+                        name="get_segment_size.use_run_every_query_size",
+                        attributes={
+                            "segment_size": str(self.run_every)
+                        }
+                    )
                 return self.run_every
             else:
                 if current_span and current_span.is_recording():
-                    current_span.set_attribute("segment_size", str(rule.get('buffer_time', self.buffer_time)))
+                    current_span.add_event(
+                        name="get_segment_size.not_use_run_every_query_size",
+                        attributes={
+                            "segment_size": str(rule.get('buffer_time', self.buffer_time))
+                        }
+                    )
                 return rule.get('buffer_time', self.buffer_time)
         else:
             if current_span and current_span.is_recording():
-                current_span.set_attribute("segment_size", str(self.run_every))
+
+                current_span.add_event(
+                    name="get_segment_size.not_use_count_query_and_not_use_terms_query_and_not_aggregation_query_element_",
+                    attributes={
+                        "segment_size": str(self.run_every)
+                    }
+                )
             return self.run_every
 
 
@@ -1295,9 +1358,7 @@ class ElastAlerter(object):
                 attributes={
                     "name": rule.get('name', 'unknown'),
                     "type": rule.get('type', {}).__class__.__name__ if rule.get('type') else 'unknown',
-                    "index": rule.get('index', 'unknown'),
-                    "es_host": rule.get('es_host', 'unknown'),
-                    "es_port": rule.get('es_port', 0)
+                    "index": rule.get('index', 'unknown')
                 }
             )
             

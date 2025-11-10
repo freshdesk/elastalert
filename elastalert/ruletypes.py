@@ -15,94 +15,9 @@ from elastalert.util import (add_raw_postfix, dt_to_ts, EAException, elastalert_
 
 from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
-from functools import wraps
 
-# Import init_tracer to ensure tracing is initialized
-from elastalert.traceproviders import init_tracer
-
-# Global tracer variable - ensure we use the same tracer instance as elastalert.py
-_ruletypes_tracer = None
-
-def get_ruletypes_tracer():
-    """Get or initialize the tracer instance - uses same name as elastalert.py for consistency"""
-    global _ruletypes_tracer
-    if _ruletypes_tracer is None:
-        # Ensure tracing is initialized (idempotent)
-        init_tracer()
-        # Use the same tracer name as elastalert.py to ensure we use the same tracer instance
-        # __name__ in elastalert.py would be "elastalert.elastalert"
-        _ruletypes_tracer = trace.get_tracer("elastalert.elastalert")
-    return _ruletypes_tracer
-
-def trace_span(span_name):
-    """Decorator to automatically create a span for a method
-    
-    IMPORTANT: This ensures spans created here appear as CHILD spans of the root span in elastalert.py.
-    
-    How it works:
-    1. elastalert.py creates a root span with: with tracer.start_as_current_span("elastalert.run_rule")
-    2. This sets the current span context in the thread
-    3. When ruletypes.py methods are called (e.g., rule_inst.add_data()), they're still within that context
-    4. This decorator uses start_as_current_span, which automatically inherits the current context
-    5. Result: All spans here become children of the root span, not separate traces
-    
-    OpenTelemetry's context propagation handles this automatically - as long as we're in the same
-    thread and use start_as_current_span, spans will be linked correctly.
-    """
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Use the same tracer instance as elastalert.py
-            # This ensures we're using the same TracerProvider and context management
-            tracer = get_ruletypes_tracer()
-            # start_as_current_span automatically inherits the current span context
-            # If we're called from within elastalert.py's run_rule() root span context,
-            # this span will automatically become a child of that root span
-            with tracer.start_as_current_span(span_name) as span:
-                try:
-                    # Set method name attribute
-                    span.set_attribute("method.name", func.__name__)
-                    
-                    # Try to get rule name from various sources
-                    rule_name = None
-                    
-                    # First, try to get from self.rules if it's an instance method
-                    if args:
-                        self_obj = args[0]
-                        if hasattr(self_obj, 'rules') and isinstance(self_obj.rules, dict):
-                            rule_name = self_obj.rules.get('name', None)
-                    
-                    # Second, try to find rule in method arguments
-                    if not rule_name:
-                        for arg in args:
-                            if isinstance(arg, dict) and 'name' in arg:
-                                rule_name = arg.get('name', 'unknown')
-                                break
-                    
-                    # Add rule name to span if found
-                    if rule_name:
-                        span.set_attribute("rule.name", rule_name)
-                    
-                    # Set class name if available
-                    if args:
-                        first_arg = args[0]
-                        if hasattr(first_arg, '__class__'):
-                            span.set_attribute("method.class", first_arg.__class__.__name__)
-                    
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    # Record error on span with detailed exception information
-                    span.record_exception(e, escaped=True)
-                    # Set status to ERROR - this must be done before span ends
-                    span.set_status(Status(StatusCode.ERROR, str(e)))
-                    # Also set error attributes directly on the span for visibility
-                    span.set_attribute("error", True)
-                    span.set_attribute("exception.type", e.__class__.__name__)
-                    span.set_attribute("exception.message", str(e))
-                    # Re-raise the exception
-                    raise
-        return wrapper
-    return decorator
+# Import tracing utilities from traceproviders
+from elastalert.traceproviders import init_tracer, trace_span
 
 
 class RuleType(object):

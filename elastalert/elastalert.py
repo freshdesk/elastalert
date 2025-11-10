@@ -50,17 +50,6 @@ from elastalert.traceproviders import init_tracer, trace_span
 from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 
-# Global tracer variable - initialized once and accessible from any method
-_global_tracer = None
-
-def get_tracer():
-    """Get or initialize the global tracer instance"""
-    global _global_tracer
-    if _global_tracer is None:
-        init_tracer()  # Initialize tracing
-        _global_tracer = trace.get_tracer(__name__)
-    return _global_tracer
-
 
 class ElastAlerter(object):
     """ The main ElastAlert runner. This class holds all state about active rules,
@@ -120,8 +109,8 @@ class ElastAlerter(object):
         self.debug = self.args.debug
         self.verbose = self.args.verbose
 
-        # Initialize global tracer
-        get_tracer()
+        # Initialize tracing at startup
+        init_tracer()
 
         if self.verbose and self.debug:
             elastalert_logger.info(

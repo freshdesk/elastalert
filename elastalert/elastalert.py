@@ -260,6 +260,15 @@ class ElastAlerter(object):
         current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
             current_span.set_attribute("query", str(query))
+            
+
+        if current_span and current_span.is_recording():
+            current_span.add_event(
+                name="query-1",
+                attributes={
+                    "query": str(query)
+                }
+            )
 
         return query
 
@@ -939,9 +948,6 @@ class ElastAlerter(object):
             else:
                 rule_inst.add_data(data)
 
-        current_span = trace.get_current_span()
-        if current_span and current_span.is_recording():
-            current_span.set_attribute("rule.rule_inst", str(rule_inst))
 
 
         #Removed scrolling as in old elastalert

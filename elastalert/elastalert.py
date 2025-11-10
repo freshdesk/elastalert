@@ -259,12 +259,8 @@ class ElastAlerter(object):
         
         current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
-            current_span.set_attribute("query", str(query))
-            
-
-        if current_span and current_span.is_recording():
             current_span.add_event(
-                name="query-1",
+                name="query",
                 attributes={
                     "query": str(query)
                 }
@@ -404,8 +400,15 @@ class ElastAlerter(object):
         # Add span attributes for processed hits (using counts and samples, not full data)
         current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
-            current_span.set_attribute("processed_hits_count", len(processed_hits))
-            current_span.set_attribute("processed_hits", str(processed_hits[:10]))
+
+            current_span.add_event(
+                name="processed_hits",
+                attributes={
+                    "count": len(processed_hits),
+                    "hits": processed_hits[:10]
+                }
+            )
+
         
         return processed_hits
 
@@ -435,10 +438,22 @@ class ElastAlerter(object):
             # Convert request to JSON string for span attribute
             try:
                 request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
-                current_span.set_attribute("msearch_request", request_str)
+
+                current_span.add_event(
+                    name="msearch_request",
+                    attributes={
+                        "request": request_str
+                    }
+                )
+
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.set_attribute("msearch_request", str(request))
+                current_span.add_event(
+                    name="msearch_request",
+                    attributes={
+                        "request": str(request)
+                    }
+                )
 
         #removed scroll as it aint supported
         # extra_args = {'_source_includes': rule['include']}
@@ -453,7 +468,12 @@ class ElastAlerter(object):
             res = res['responses'][0]
             
             if current_span and current_span.is_recording():
-                current_span.set_attribute("msearch_response", json.dumps(res))
+                current_span.add_event(
+                    name="msearch_response",
+                    attributes={
+                        "response": json.dumps(res)
+                    }
+                )
 
             self.thread_data.total_hits = int(res['hits']['total']['value'] if isinstance(res['hits']['total'], dict) else res['hits']['total'])
 
@@ -572,11 +592,21 @@ class ElastAlerter(object):
             # Convert request to JSON string for span attribute
             try:
                 request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
-                current_span.set_attribute("msearch_request", request_str)
+                current_span.add_event(
+                    name="msearch_request",
+                    attributes={
+                        "request": request_str
+                    }
+                )
+
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.set_attribute("msearch_request", str(request))
-
+                current_span.add_event(
+                    name="msearch_request",
+                    attributes={
+                        "request": str(request)
+                    }
+                )
 
         try:
             #using backwards compatibile msearch
@@ -588,10 +618,22 @@ class ElastAlerter(object):
                 # Convert response to JSON string for span attribute
                 try:
                     response_str = json.dumps(res) if isinstance(res, (dict, list)) else str(res)
-                    current_span.set_attribute("msearch_response", response_str)
+
+                    current_span.add_event(
+                        name="msearch_response",
+                        attributes={
+                            "response": response_str
+                        }
+                    )
+
                 except (TypeError, ValueError):
                     # If JSON serialization fails, use string representation
-                    current_span.set_attribute("msearch_response", str(res))
+                    current_span.add_event(
+                        name="msearch_response",
+                        attributes={
+                            "response": str(res)
+                        }
+                    )
 
 
         except ElasticsearchException as e:
@@ -660,10 +702,20 @@ class ElastAlerter(object):
             # Convert request to JSON string for span attribute
             try:
                 request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
-                current_span.set_attribute("msearch_request", request_str)
+                current_span.add_event(
+                    name="msearch_request",
+                    attributes={
+                        "request": request_str
+                    }
+                )
             except (TypeError, ValueError):
                 # If JSON serialization fails, use string representation
-                current_span.set_attribute("msearch_request", str(request))
+                current_span.add_event(
+                    name="msearch_request",
+                    attributes={
+                        "request": str(request)
+                    }
+                )
 
         try:
             #using backwards compatibile msearch
@@ -675,10 +727,22 @@ class ElastAlerter(object):
                 # Convert response to JSON string for span attribute
                 try:
                     response_str = json.dumps(res) if isinstance(res, (dict, list)) else str(res)
-                    current_span.set_attribute("msearch_response", response_str)
+
+                    current_span.add_event(
+                        name="msearch_response",
+                        attributes={
+                            "response": response_str
+                        }
+                    )
+
                 except (TypeError, ValueError):
                     # If JSON serialization fails, use string representation
-                    current_span.set_attribute("msearch_response", str(res))
+                    current_span.add_event(
+                        name="msearch_response",
+                        attributes={
+                            "response": str(res)
+                        }
+                    )
 
         except ElasticsearchException as e:
             # Elasticsearch sometimes gives us GIGANTIC error messages
@@ -864,7 +928,12 @@ class ElastAlerter(object):
 
         current_span = trace.get_current_span()
         if current_span and current_span.is_recording():
-            current_span.set_attribute("remove_old_events", str(remove))
+            current_span.add_event(
+                name="remove_old_events",
+                attributes={
+                    "remove": str(remove)
+                }
+            )
 
 
     @trace_span("elastalert.run_query")
@@ -890,8 +959,14 @@ class ElastAlerter(object):
 
             current_span = trace.get_current_span()
             if current_span and current_span.is_recording():
-                current_span.set_attribute("query.starttime", str(start))
-                current_span.set_attribute("query.endtime", str(end))
+                current_span.add_event(
+                    name="query",
+                    attributes={
+                        "starttime": str(start),
+                        "endtime": str(end)
+                    }
+                )
+                
         # Reset hit counter and query
         rule_inst = rule['type']
         rule['scrolling_cycle'] = rule.get('scrolling_cycle', 0) + 1
@@ -1207,13 +1282,24 @@ class ElastAlerter(object):
         root_span = trace.get_current_span()
         if root_span and root_span.is_recording():
             # Rule identification
-            root_span.set_attribute("rule.name", rule.get('name', 'unknown'))
-            root_span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__ if rule.get('type') else 'unknown')
-            root_span.set_attribute("rule.index", rule.get('index', 'unknown'))
+            # root_span.set_attribute("rule.name", rule.get('name', 'unknown'))
+            # root_span.set_attribute("rule.type", rule.get('type', {}).__class__.__name__ if rule.get('type') else 'unknown')
+            # root_span.set_attribute("rule.index", rule.get('index', 'unknown'))
             
-            # Elasticsearch connection details
-            root_span.set_attribute("es.host", rule.get('es_host', 'unknown'))
-            root_span.set_attribute("es.port", rule.get('es_port', 0))
+            # # Elasticsearch connection details
+            # root_span.set_attribute("es.host", rule.get('es_host', 'unknown'))
+            # root_span.set_attribute("es.port", rule.get('es_port', 0))
+
+            root_span.add_event(
+                name="rule",
+                attributes={
+                    "name": rule.get('name', 'unknown'),
+                    "type": rule.get('type', {}).__class__.__name__ if rule.get('type') else 'unknown',
+                    "index": rule.get('index', 'unknown'),
+                    "es_host": rule.get('es_host', 'unknown'),
+                    "es_port": rule.get('es_port', 0)
+                }
+            )
             
             # Rule configuration details
             # if rule.get('query_key'):
@@ -1352,12 +1438,17 @@ class ElastAlerter(object):
 
 
         if root_span and root_span.is_recording():
-            root_span.set_attribute("writeback.starttime", str(rule['original_starttime']))
-            root_span.set_attribute("writeback.endtime", str(endtime))
-            root_span.set_attribute("writeback.matches", num_matches)
-            root_span.set_attribute("writeback.hits", max(self.thread_data.num_hits, self.thread_data.cumulative_hits))
-            root_span.set_attribute("writeback.timestamp", str(ts_now()))
-            root_span.set_attribute("writeback.time_taken", str(time_taken))
+            root_span.add_event(
+                name="writeback",
+                attributes={
+                    "starttime": str(rule['original_starttime']),
+                    "endtime": str(endtime),
+                    "matches": num_matches,
+                    "hits": max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
+                    "timestamp": str(ts_now()),
+                    "time_taken": str(time_taken)
+                }
+            )
 
         self.writeback('elastalert_status', body)
 
@@ -1920,9 +2011,14 @@ class ElastAlerter(object):
 
             current_span = trace.get_current_span()
             if current_span and current_span.is_recording():
-                current_span.set_attribute("writeback_index", str(index))
-                current_span.set_attribute("writeback_body", str(writeback_body))
-                current_span.set_attribute("writeback_response", str(res))
+                current_span.add_event(
+                    name="writeback",
+                    attributes={
+                        "index": str(index),
+                        "body": str(writeback_body),
+                        "response": str(res)
+                    }
+                )
 
             return res
         except ElasticsearchException as e:

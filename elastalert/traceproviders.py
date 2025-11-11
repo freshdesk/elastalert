@@ -40,6 +40,9 @@ def init_tracer(config):
         logger.info(f"Initializing OpenTelemetry tracer with endpoint: {endpoint}")
         logger.info(f"Trace service name: {config.get('trace_service_name', 'elastalert')}")
         logger.info(f"service name form config: {config.get('trace_service_name')}")
+        logger.info("--------------------------------")
+        logger.info(f"conf in traceproviders: {config}")
+        logger.info("--------------------------------")
         
         # Create resource with service information
         resource = Resource.create({

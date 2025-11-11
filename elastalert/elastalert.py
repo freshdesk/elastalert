@@ -109,7 +109,6 @@ class ElastAlerter(object):
         self.debug = self.args.debug
         self.verbose = self.args.verbose
 
-        # Initialize tracing at startup
 
         if self.verbose and self.debug:
             elastalert_logger.info(
@@ -135,6 +134,7 @@ class ElastAlerter(object):
 
         self.conf = load_conf(self.args)
 
+        # Initialize tracing at startup
         init_tracer(get_trace_config(self.conf))
 
         self.rules_loader = self.conf['rules_loader']

@@ -37,13 +37,7 @@ def init_tracer(config):
     tracer = None
     try:
         endpoint = config.get('otel_exporter_endpoint', 'trace-shipper.trace-shipper:55680')
-        logger.info(f"Initializing OpenTelemetry tracer with endpoint: {endpoint}")
-        logger.info(f"Trace service name: {config.get('trace_service_name', 'elastalert')}")
-        logger.info(f"service name form config: {config.get('trace_service_name')}")
-        logger.info("--------------------------------")
-        logger.info(f"conf in traceproviders: {config}")
-        logger.info("--------------------------------")
-        
+
         # Create resource with service information
         resource = Resource.create({
             ResourceAttributes.SERVICE_NAME: config.get('trace_service_name', 'elastalert'),
@@ -214,11 +208,6 @@ def trace_span(span_name):
             return staticmethod(wrapper)
         return wrapper
     return decorator
-
-
-# ============================================================================
-# Span Helper Functions
-# ============================================================================
 
 def get_recording_span():
     current_span = trace.get_current_span()

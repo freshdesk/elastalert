@@ -710,12 +710,4 @@ def get_trace_config(conf):
     trace_config['telemetry_sdk_version'] = conf.get('telemetry_sdk_version', '1.25.0')
     trace_config['elastalert_deployment_name'] = conf.get('elastalert_deployment_name', 'elastalert-deployment')
 
-    elastalert_logger.info("-----------IN UTIL---------------------")
-    elastalert_logger.info(f"trace_config: {trace_config}")
-    elastalert_logger.info("--------------------------------")
-
-
-    elastalert_logger.info("-----------IN UTIL---------------------")
-    elastalert_logger.info(f"conf: {conf}")
-    elastalert_logger.info("--------------------------------")
     return trace_config

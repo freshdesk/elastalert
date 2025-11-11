@@ -701,14 +701,14 @@ def get_version_from_cluster_info(client):
 
 def get_trace_config(conf):
     trace_config = {}
-    trace_config['enabled'] = conf.get('tracing.enabled', True)
-    trace_config['otel_exporter_endpoint'] = conf.get('tracing.otel_exporter_endpoint', 'trace-shipper.trace-shipper:55680')
-    trace_config['otel_sdk_version'] = conf.get('tracing.otel_sdk_version', '1.21.0')
-    trace_config['trace_service_name'] = conf.get('tracing.trace_service_name', 'elastalert')
-    trace_config['trace_sampling_probability'] = conf.get('tracing.trace_sampling_probability', 1.0)
-    trace_config['telemetry_sdk_name'] = conf.get('tracing.telemetry_sdk_name', 'opentelemetry')
-    trace_config['telemetry_sdk_version'] = conf.get('tracing.telemetry_sdk_version', '1.25.0')
-    trace_config['elastalert_deployment_name'] = conf.get('tracing.elastalert_deployment_name', 'elastalert-deployment')
+    trace_config['enabled'] = conf.get('enabled', True)
+    trace_config['otel_exporter_endpoint'] = conf.get('otel_exporter_endpoint', 'trace-shipper.trace-shipper:55680')
+    trace_config['otel_sdk_version'] = conf.get('otel_sdk_version', '1.21.0')
+    trace_config['trace_service_name'] = conf.get('trace_service_name', 'elastalert')
+    trace_config['trace_sampling_probability'] = conf.get('trace_sampling_probability', 1.0)
+    trace_config['telemetry_sdk_name'] = conf.get('telemetry_sdk_name', 'opentelemetry')
+    trace_config['telemetry_sdk_version'] = conf.get('telemetry_sdk_version', '1.25.0')
+    trace_config['elastalert_deployment_name'] = conf.get('elastalert_deployment_name', 'elastalert-deployment')
 
     elastalert_logger.info("-----------IN UTIL---------------------")
     elastalert_logger.info(f"trace_config: {trace_config}")

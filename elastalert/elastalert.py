@@ -44,7 +44,7 @@ from elastalert.util import (add_raw_postfix, cronite_datetime_to_timestamp, dt_
                              elastalert_logger, elasticsearch_client, get_msearch_query,kibana_adapter_client, format_index, lookup_es_key, parse_deadline,
                              parse_duration, pretty_ts, replace_dots_in_field_names, seconds, set_es_key,
                              should_scrolling_continue, total_seconds, ts_add, ts_now, ts_to_dt, unix_to_dt,
-                             ts_utc_to_tz, dt_to_ts_with_format)
+                             ts_utc_to_tz, dt_to_ts_with_format, get_trace_config)
 
 from elastalert.traceproviders import init_tracer, trace_span, get_recording_span
 from opentelemetry import trace
@@ -110,7 +110,6 @@ class ElastAlerter(object):
         self.verbose = self.args.verbose
 
         # Initialize tracing at startup
-        init_tracer()
 
         if self.verbose and self.debug:
             elastalert_logger.info(
@@ -135,6 +134,9 @@ class ElastAlerter(object):
             tracer.addHandler(logging.FileHandler(self.args.es_debug_trace))
 
         self.conf = load_conf(self.args)
+
+        init_tracer(get_trace_config(self.conf))
+
         self.rules_loader = self.conf['rules_loader']
         self.rules = self.rules_loader.load(self.conf, self.args)
 
@@ -201,6 +203,8 @@ class ElastAlerter(object):
 
         if self.args.silence:
             self.silence()
+        
+
 
 
     @trace_span("elastalert.get_index")
@@ -1211,7 +1215,6 @@ class ElastAlerter(object):
             #add event not as attribute
         if span:
             span.add_event("adjust_start_time_for_interval_sync", {
-                "rule": str(rule),
                 "starttime": str(rule['starttime']),
                 "endtime": str(endtime)
             })
@@ -1507,18 +1510,18 @@ class ElastAlerter(object):
                 '@timestamp': ts_now(),
                 'time_taken': time_taken}
 
-
-        root_span.add_event(
-            name="writeback",
-            attributes={
-                "starttime": str(rule['original_starttime']),
-                "endtime": str(endtime),
-                "matches": num_matches,
-                "hits": max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
-                "timestamp": str(ts_now()),
-                "time_taken": str(time_taken)
-            }
-        )
+        if root_span:
+            root_span.add_event(
+                name="writeback",
+                attributes={
+                    "starttime": str(rule['original_starttime']),
+                    "endtime": str(endtime),
+                    "matches": num_matches,
+                    "hits": max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
+                    "timestamp": str(ts_now()),
+                    "time_taken": str(time_taken)
+                }
+            )
 
         self.writeback('elastalert_status', body)
 

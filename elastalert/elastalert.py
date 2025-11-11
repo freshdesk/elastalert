@@ -135,7 +135,10 @@ class ElastAlerter(object):
 
         self.conf = load_conf(self.args)
 
+        elastalert_logger.info("--------------------------------")
+        elastalert_logger.info(f"conf before init_tracer: {self.conf}")
         init_tracer(get_trace_config(self.conf))
+
 
 
         self.rules_loader = self.conf['rules_loader']

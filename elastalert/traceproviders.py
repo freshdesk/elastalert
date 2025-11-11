@@ -38,6 +38,8 @@ def init_tracer(config):
     try:
         endpoint = config.get('otel_exporter_endpoint', 'trace-shipper.trace-shipper:55680')
         logger.info(f"Initializing OpenTelemetry tracer with endpoint: {endpoint}")
+        logger.info(f"Trace service name: {config.get('trace_service_name', 'elastalert')}")
+        logger.info(f"service name form config: {config.get('trace_service_name')}")
         
         # Create resource with service information
         resource = Resource.create({

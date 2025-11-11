@@ -1511,18 +1511,18 @@ class ElastAlerter(object):
                 '@timestamp': ts_now(),
                 'time_taken': time_taken}
 
-
-        root_span.add_event(
-            name="writeback",
-            attributes={
-                "starttime": str(rule['original_starttime']),
-                "endtime": str(endtime),
-                "matches": num_matches,
-                "hits": max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
-                "timestamp": str(ts_now()),
-                "time_taken": str(time_taken)
-            }
-        )
+        if root_span:
+            root_span.add_event(
+                name="writeback",
+                attributes={
+                    "starttime": str(rule['original_starttime']),
+                    "endtime": str(endtime),
+                    "matches": num_matches,
+                    "hits": max(self.thread_data.num_hits, self.thread_data.cumulative_hits),
+                    "timestamp": str(ts_now()),
+                    "time_taken": str(time_taken)
+                }
+            )
 
         self.writeback('elastalert_status', body)
 

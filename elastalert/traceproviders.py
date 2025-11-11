@@ -19,25 +19,13 @@ from functools import wraps
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
 
-config = {
-    'enabled': True,
-    # OTLP gRPC exporter endpoint (port 4317 for gRPC, 4318 for HTTP)
-    'otel_exporter_endpoint': 'trace-shipper.trace-shipper:55680',
-    'otel_sdk_version': '1.21.0',
-    'trace_service_name': 'elastalert',
-    'trace_sampling_probability': 1.0
-}
-telemetry_sdk_name = "opentelemetry"
-telemetry_sdk_language = "python"
-telemetry_sdk_version = "1.25.0"
-
 def get_hostname():
     return socket.gethostname()
 
 def get_host_ip():
     return socket.gethostbyname(socket.gethostname())
 
-def init_tracer():
+def init_tracer(config):
     logger = logging.getLogger('elastalert')
     
     # Check if tracing is enabled
@@ -48,15 +36,16 @@ def init_tracer():
 
     tracer = None
     try:
-        endpoint = config.get('otel_exporter_endpoint', 'http://localhost:4317')
+        endpoint = config.get('otel_exporter_endpoint', 'trace-shipper.trace-shipper:55680')
         logger.info(f"Initializing OpenTelemetry tracer with endpoint: {endpoint}")
         
         # Create resource with service information
         resource = Resource.create({
             ResourceAttributes.SERVICE_NAME: config.get('trace_service_name', 'elastalert'),
-            ResourceAttributes.TELEMETRY_SDK_NAME: telemetry_sdk_name,
+            ResourceAttributes.TELEMETRY_SDK_NAME: config.get('telemetry_sdk_name', 'opentelemetry'),
             ResourceAttributes.TELEMETRY_SDK_LANGUAGE: "python",
             ResourceAttributes.TELEMETRY_SDK_VERSION: config.get('otel_sdk_version', '1.25.0'),
+            ResourceAttributes.DEPLOYMENT_NAME: config.get('elastalert_deployment_name', 'elastalert-deployment'),
             ResourceAttributes.HOST_NAME: get_hostname(),
             ResourceAttributes.HOST_ID: get_host_ip(),  # Using HOST_ID for IP address
         })
@@ -116,10 +105,6 @@ def init_tracer():
 
     return tracer
 
-
-# ============================================================================
-# Span Decorator
-# ============================================================================
 
 def trace_span(span_name):
     """

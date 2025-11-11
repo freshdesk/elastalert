@@ -45,7 +45,6 @@ def init_tracer(config):
             ResourceAttributes.TELEMETRY_SDK_NAME: config.get('telemetry_sdk_name', 'opentelemetry'),
             ResourceAttributes.TELEMETRY_SDK_LANGUAGE: "python",
             ResourceAttributes.TELEMETRY_SDK_VERSION: config.get('otel_sdk_version', '1.25.0'),
-            ResourceAttributes.DEPLOYMENT_NAME: config.get('elastalert_deployment_name', 'elastalert-deployment'),
             ResourceAttributes.HOST_NAME: get_hostname(),
             ResourceAttributes.HOST_ID: get_host_ip(),  # Using HOST_ID for IP address
         })

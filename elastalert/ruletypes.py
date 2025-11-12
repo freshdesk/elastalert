@@ -4,13 +4,20 @@ import datetime
 import sys
 import time
 import itertools
-
+import json
+from functools import wraps
 
 from sortedcontainers import SortedKeyList as sortedlist
 
 from elastalert.util import (add_raw_postfix, dt_to_ts, EAException, elastalert_logger, elasticsearch_client,
                              format_index, get_msearch_query, hashable, kibana_adapter_client, lookup_es_key, new_get_event_ts, pretty_ts, total_seconds,
                              ts_now, ts_to_dt, expand_string_into_dict, format_string)
+
+from opentelemetry import trace
+from opentelemetry.trace.status import Status, StatusCode
+
+# Import tracing utilities from traceproviders
+from elastalert.traceproviders import init_tracer, trace_span, get_recording_span
 
 
 class RuleType(object):
@@ -61,6 +68,7 @@ class RuleType(object):
         """
         return ''
 
+    @trace_span("ruletypes.RuleType.garbage_collect")
     def garbage_collect(self, timestamp):
         """ Gets called periodically to remove old data that is useless beyond given timestamp.
         May also be used to compute things in the absence of new data.
@@ -111,6 +119,7 @@ class CompareRule(RuleType):
         """ An event is a match if this returns true """
         raise NotImplementedError()
 
+    @trace_span("ruletypes.CompareRule.add_data")
     def add_data(self, data):
         # If compare returns true, add it as a match
         for event in data:
@@ -126,10 +135,16 @@ class BlacklistRule(CompareRule):
         super(BlacklistRule, self).__init__(rules, args=None)
         self.expand_entries('blacklist')
 
+    @trace_span("ruletypes.BlacklistRule.compare")
     def compare(self, event):
+        span = get_recording_span()
         term = lookup_es_key(event, self.rules['compare_key'])
         if term in self.rules['blacklist']:
+            if span:
+                span.set_attribute("blacklist_match", True)
             return True
+        if span:
+            span.set_attribute("blacklist_match", False)
         return False
 
 
@@ -224,8 +239,8 @@ class FrequencyRule(RuleType):
     #     self.occurrences.setdefault('all', EventWindow(self.rules['timeframe'], getTimestamp=self.get_ts)).append(event)
     #     self.check_for_match('all')
 
+    @trace_span("ruletypes.FrequencyRule.add_count_data")
     def add_count_data(self, data):
-        # data struncture should be -> data: {endtime:<dateTime>,count:<CountOfEvents>,event:[{}]}
         # if data doesn't have endtime and count as above example, raise an exception
         if not 'endtime' in data or not 'count' in data:
             raise EAException('add_count_data should have endtime and count')
@@ -241,6 +256,7 @@ class FrequencyRule(RuleType):
         self.check_for_match('all')
 
     #nested query key optimizations
+    @trace_span("ruletypes.FrequencyRule.add_terms_data")
     def add_terms_data(self, terms):
         if 'nested_query_key' in self.rules and self.rules['nested_query_key'] == True:
             #letting this log message stay inorder to debug issues in future
@@ -271,6 +287,7 @@ class FrequencyRule(RuleType):
                 self.check_for_match(nestedkey)
 
 
+    @trace_span("ruletypes.FrequencyRule.add_data")
     def add_data(self, data):
         if 'query_key' in self.rules:
             qk = self.rules['query_key']
@@ -328,6 +345,7 @@ class FrequencyRule(RuleType):
 class AnyRule(RuleType):
     """ A rule that will match on any input data """
 
+    @trace_span("ruletypes.AnyRule.add_data")
     def add_data(self, data):
         for datum in data:
             self.add_match(datum)
@@ -561,6 +579,7 @@ class SpikeRule(RuleType):
         count = data['count']
         self.handle_event({self.ts_field: ts}, count, 'all')     
 
+    @trace_span("ruletypes.SpikeRule.add_terms_data")
     def add_terms_data(self, terms):
         for timestamp, buckets in terms.items():
             for bucket in buckets:
@@ -570,6 +589,7 @@ class SpikeRule(RuleType):
                 key = bucket['key']
                 self.handle_event(event, count, key)
 
+    @trace_span("ruletypes.SpikeRule.add_data")
     def add_data(self, data):
         for event in data:
             qk = self.rules.get('query_key', 'all')
@@ -706,6 +726,7 @@ class SpikeRule(RuleType):
                 match['reference_count'], self.rules['timeframe'])
         return message
 
+    @trace_span("ruletypes.SpikeRule.garbage_collect")
     def garbage_collect(self, ts):
         # Windows are sized according to their newest event
         # This is a placeholder to accurately size windows in the absence of events
@@ -732,6 +753,7 @@ class AdvancedQueryRule(RuleType):
         #self.query_string = self.rules.get('query_string')
         self.rules['aggregation_query_element'] = {"query": ""}
 
+    @trace_span("ruletypes.AdvancedQueryRule.add_aggregation_data")
     def add_aggregation_data(self, payload):
         for timestamp, payload_data in payload.items():
             self.check_matches(payload_data,timestamp)
@@ -849,6 +871,7 @@ class FlatlineRule(FrequencyRule):
         )
         return message
 
+    @trace_span("ruletypes.FlatlineRule.garbage_collect")
     def garbage_collect(self, ts):
         # We add an event with a count of zero to the EventWindow for each key. This will cause the EventWindow
         # to remove events that occurred more than one `timeframe` ago, and call onRemoved on them.
@@ -918,6 +941,7 @@ class NewTermsRule(RuleType):
         
         
 
+    @trace_span("ruletypes.NewTermsRule.get_new_term_query")
     def get_new_term_query(self,starttime,endtime,field):
         
         field_name = {
@@ -985,12 +1009,29 @@ class NewTermsRule(RuleType):
 
         return query
 
+    @trace_span("ruletypes.NewTermsRule.get_terms_data")
     def get_terms_data(self, es, starttime, endtime, field, request_timeout= None):
+        span = get_recording_span()
         terms = []
         counts = []
         query = self.get_new_term_query(starttime,endtime,field)
         request = get_msearch_query(query,self.rules)
         
+        # Add query,request to current span as attribute
+        if span:
+            # Convert query to JSON string for span attribute
+            try:
+                query_str = json.dumps(query) if isinstance(query, (dict, list)) else str(query)
+                span.set_attribute("query", query_str)
+                request_str = json.dumps(request) if isinstance(request, (dict, list)) else str(request)
+                span.set_attribute("msearch_request", request_str)
+
+            except (TypeError, ValueError):
+                # If JSON serialization fails, use string representation
+                span.set_attribute("query", str(query))
+                span.set_attribute("msearch_request", str(request))
+
+
         if request_timeout == None:
             res = es.msearch(body=request) 
         else:
@@ -1162,6 +1203,7 @@ class NewTermsRule(RuleType):
                     final_counts.append(node['doc_count'])
         return final_keys, final_counts
 
+    @trace_span("ruletypes.NewTermsRule.add_terms_data")
     def add_terms_data(self, payload):
         timestamp = list(payload.keys())[0]
         data = payload[timestamp]
@@ -1240,6 +1282,7 @@ class CardinalityRule(RuleType):
         self.first_event = {}
         self.timeframe = self.rules['timeframe']
 
+    @trace_span("ruletypes.CardinalityRule.add_data")
     def add_data(self, data):
         qk = self.rules.get('query_key')
         for event in data:
@@ -1329,6 +1372,7 @@ class BaseAggregationRule(RuleType):
     def generate_aggregation_query(self):
         raise NotImplementedError()
 
+    @trace_span("ruletypes.MetricAggregationRule.add_aggregation_data")
     def add_aggregation_data(self, payload):
         for timestamp, payload_data in payload.items():
             if 'interval_aggs' in payload_data:
@@ -1370,6 +1414,7 @@ class ErrorRateRule(BaseAggregationRule):
         # hardcoding uniq aggregation for total count
         self.rules['total_agg_type'] = "uniq"
 
+    @trace_span("ruletypes.ErrorRateRule.calculate_err_rate")
     def calculate_err_rate(self,payload):
         for timestamp, payload_data in payload.items():
             if int(payload_data['total_count']) > 0:
@@ -1516,6 +1561,7 @@ class SpikeMetricAggregationRule(BaseAggregationRule, SpikeRule):
             query[self.metric_key][self.rules['metric_agg_type']]['percents'] = [self.rules['percentile_range']]
         return query
 
+    @trace_span("ruletypes.SpikeMetricAggregationRule.add_aggregation_data")
     def add_aggregation_data(self, payload):
         """
         BaseAggregationRule.add_aggregation_data unpacks our results and runs checks directly against hardcoded cutoffs.

@@ -1142,7 +1142,7 @@ class ElastAlerter(object):
                     rule['minimum_starttime'] = rule['starttime']
                     #add starttime to span attribute
                     if span:
-                        span.set_attribute("starttime", rule['starttime'])
+                        span.set_attribute("starttime", str(rule['starttime']))
 
                     return None
 
@@ -1177,7 +1177,7 @@ class ElastAlerter(object):
 
         #add starttime to span attribute
         if span:
-            span.set_attribute("starttime", rule['starttime'])
+            span.set_attribute("starttime", str(rule['starttime']))
 
 
     @trace_span("elastalert.adjust_start_time_for_overlapping_agg_query")
@@ -1209,10 +1209,13 @@ class ElastAlerter(object):
 
             #add event not as attribute
         if span:
-            span.add_event("adjust_start_time_for_interval_sync", {
-                "starttime": str(rule['starttime']),
-                "endtime": str(endtime)
-            })
+            span.add_event(
+                name="adjust_start_time_for_interval_sync",
+                attributes={
+                    "starttime": str(rule['starttime']),
+                    "endtime": str(endtime)
+                }
+            )
 
     @trace_span("elastalert.get_segment_size")
     def get_segment_size(self, rule):
@@ -1384,7 +1387,7 @@ class ElastAlerter(object):
             
             # Tenant information if available
             if rule.get('tenant'):
-                root_span.set_attribute("rule.tenant", rule['tenant'])
+                root_span.set_attribute("rule.tenant", str(rule['tenant']))
         
         self.thread_data.current_es = kibana_adapter_client(rule)
         self.current_es_addr = (rule['es_host'], rule['es_port'])

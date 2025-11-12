@@ -109,7 +109,6 @@ class ElastAlerter(object):
         self.debug = self.args.debug
         self.verbose = self.args.verbose
 
-
         if self.verbose and self.debug:
             elastalert_logger.info(
                 "Note: --debug and --verbose flags are set. --debug takes precedent."
@@ -204,9 +203,6 @@ class ElastAlerter(object):
         if self.args.silence:
             self.silence()
         
-
-
-
     @trace_span("elastalert.get_index")
     @staticmethod
     def get_index(rule, starttime=None, endtime=None):
@@ -226,7 +222,6 @@ class ElastAlerter(object):
                 return index[:format_start] + '*' + index[format_end:]
         else:
             return index
-
 
     @trace_span("elastalert.get_query")
     @staticmethod
@@ -410,7 +405,7 @@ class ElastAlerter(object):
                 name="processed_hits",
                 attributes={
                     "count": len(processed_hits),
-                    "hits": processed_hits[:10]
+                    "hits": str(processed_hits[:10])
                 }
             )
 

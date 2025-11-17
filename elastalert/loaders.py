@@ -186,9 +186,6 @@ class RulesLoader(object):
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
 
-                # TEST: Uncomment the line below to test exception handling
-                raise EAException('Test exception for metric validation')
-
             except EAException as e: 
                 elastalert_logger.error('Error loading file %s: %s' % (rule_file, e))
                 span = get_recording_span()
@@ -199,11 +196,12 @@ class RulesLoader(object):
 
                 # Increment Prometheus metric for exceptions
                 try:
-                    rule_name = rule.get('name')
-                    if not rule_name:
-                        rule_name = 'unknown'
+                    rule_name = rule.get('name') or 'unknown'
+                    tenant = "unknown"
+                    if rule_name != 'unknown':
+                        tenant = rule_name.split('_')[0]
                     error_type = e.__class__.__name__
-                    elastalert_load_rule_failed_total.labels(rule=rule_name, error_type=error_type).inc()
+                    elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
                 except Exception as metric_error:
                     # Don't let metric errors break rule loading
                     elastalert_logger.warning('Failed to record excep_total metric: %s' % metric_error)

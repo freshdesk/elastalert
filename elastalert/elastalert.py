@@ -50,6 +50,14 @@ from elastalert.traceproviders import init_tracer, trace_span, get_recording_spa
 from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 
+from prometheus_client import Counter
+
+
+elastalert_exceptions_total = Counter(
+        'elastalert_exceptions_total',
+        'Total number of all unhandled exceptions in ElastAlert',
+        ['error_type', 'error_message']
+)
 
 class ElastAlerter(object):
     """ The main ElastAlert runner. This class holds all state about active rules,
@@ -2539,16 +2547,49 @@ def main(args=None):
     signal.signal(signal.SIGINT, handle_signal)
     if not args:
         args = sys.argv[1:]
-    client = ElastAlerter(args)
 
-    if client.prometheus_port and not client.debug:
-        p = PrometheusWrapper(client)
-        p.start()
+    try:
+        client = ElastAlerter(args)
 
-    if not client.args.silence:
-        client.start()
+        if client.prometheus_port and not client.debug:
+            p = PrometheusWrapper(client)
+            p.start()
+
+        if not client.args.silence:
+            client.start()
+            
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully - don't log as error
+        elastalert_logger.info('ElastAlert interrupted by user')
+        return 0
+    except Exception as e:
+        # Global exception handler inside main() - catch ALL unhandled exceptions
+        # This prevents the process from crashing and avoids crashloops in K8s
+        error_type = e.__class__.__name__
+        error_message = str(e)
+        
+        # Log the exception with full traceback for debugging
+        elastalert_logger.error(
+            'Unhandled exception in ElastAlert: %s: %s' % (error_type, error_message),
+            exc_info=True
+        )
+        
+        # Increment Prometheus metric for monitoring
+        try:
+            elastalert_exceptions_total.labels(
+                error_type=error_type,
+                error_message=error_message[:15]
+            ).inc()
+        except Exception as metric_error:
+            # Don't let metric errors break exception handling
+            elastalert_logger.warning('Failed to record exception metric: %s' % metric_error)
+        
+        # Return 0 to prevent crashloop in K8s
+        # The exception is logged and metered, but process exits gracefully
+        # This allows K8s to restart if needed, but prevents continuous crashloops
+        return 0
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':    
     sys.exit(main(sys.argv[1:]))
     

@@ -1811,7 +1811,6 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.handle_rule_execution")
     def handle_rule_execution(self, rule):
-        # a = 1/0
         self.thread_data.alerts_sent = 0
         next_run = datetime.datetime.utcnow() + rule['run_every']
         # Set endtime based on the rule's delay

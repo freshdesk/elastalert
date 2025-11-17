@@ -61,6 +61,16 @@ from elastalert.util import ts_to_dt_with_format
 from elastalert.util import unix_to_dt
 from elastalert.util import unixms_to_dt
 from elastalert.yaml import read_yaml
+from elastalert.traceproviders import init_tracer, trace_span, get_recording_span
+from prometheus_client import Counter
+
+# Initialize Prometheus metric for rule loading exceptions
+# Created at module level, similar to prometheus_wrapper.py pattern
+elastalert_load_rule_failed_total = Counter(
+    'elastalert_load_rule_failed_total',
+    'Total number of exceptions encountered while loading rule files',
+    ['rule', 'error_type']
+)
 
 
 # load rules schema
@@ -151,6 +161,7 @@ class RulesLoader(object):
         self.base_config = copy.deepcopy(conf)
         self.import_rules = {} # import rule dependency
 
+    @trace_span("elastalert.loaders.load")
     def load(self, conf, args=None):
         """
         Discover and load all the rules as defined in the conf and args.
@@ -175,7 +186,25 @@ class RulesLoader(object):
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
             except EAException as e: 
-                raise EAException('Error loading file %s: %s' % (rule_file, e))
+                elastalert_logger.error('Error loading file %s: %s' % (rule_file, e))
+                span = get_recording_span()
+                if span:
+                    span.set_attribute("error", True)
+                    span.set_attribute("exception.type", e.__class__.__name__)
+                    span.set_attribute("exception.message", str(e))
+
+                # Increment Prometheus metric for exceptions
+                try:
+                    rule_name = rule.get('name')
+                    if not rule_name:
+                        rule_name = 'unknown'
+                    error_type = e.__class__.__name__
+                    elastalert_load_rule_failed_total.labels(rule=rule_name, error_type=error_type).inc()
+                except Exception as metric_error:
+                    # Don't let metric errors break rule loading
+                    elastalert_logger.warning('Failed to record excep_total metric: %s' % metric_error)
+
+                continue
 
             rules.append(rule)
             names.append(rule['name'])

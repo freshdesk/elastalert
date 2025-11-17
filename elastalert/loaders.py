@@ -69,7 +69,7 @@ from prometheus_client import Counter
 elastalert_load_rule_failed_total = Counter(
     'elastalert_load_rule_failed_total',
     'Total number of exceptions encountered while loading rule files',
-    ['rule', 'error_type']
+    ['rule', 'tenant', 'error_type']
 )
 
 

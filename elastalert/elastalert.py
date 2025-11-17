@@ -1815,6 +1815,7 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.handle_rule_execution")
     def handle_rule_execution(self, rule):
+        a = 1/0
         self.thread_data.alerts_sent = 0
         next_run = datetime.datetime.utcnow() + rule['run_every']
         # Set endtime based on the rule's delay
@@ -2556,11 +2557,6 @@ def main(args=None):
 
         if not client.args.silence:
             client.start()
-            
-    except KeyboardInterrupt:
-        # Handle Ctrl+C gracefully - don't log as error
-        elastalert_logger.info('ElastAlert interrupted by user')
-        return 0
     except Exception as e:
         # Global exception handler inside main() - catch ALL unhandled exceptions
         # This prevents the process from crashing and avoids crashloops in K8s

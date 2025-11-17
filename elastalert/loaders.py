@@ -186,6 +186,8 @@ class RulesLoader(object):
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
 
+                raise EAException('Test exception for metric validation')
+
             except EAException as e: 
                 elastalert_logger.error('Error loading file %s: %s' % (rule_file, e))
                 span = get_recording_span()

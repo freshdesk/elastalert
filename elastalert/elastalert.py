@@ -2506,7 +2506,7 @@ class ElastAlerter(object):
 
             # Save a dict with the top 5 events by key
             all_counts['top_events_%s' % (key)] = top_events_count
-
+        a = 1/0
         return all_counts
 
     @trace_span("elastalert.next_alert_time")

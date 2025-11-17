@@ -51,13 +51,9 @@ from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 
 from prometheus_client import Counter
+from elastalert.prometheus_wrapper import elastalert_exceptions_total
 
 
-elastalert_exceptions_total = Counter(
-        'elastalert_exceptions_total',
-        'Total number of all unhandled exceptions in ElastAlert',
-        ['error_type', 'error_message']
-)
 
 class ElastAlerter(object):
     """ The main ElastAlert runner. This class holds all state about active rules,
@@ -1815,7 +1811,7 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.handle_rule_execution")
     def handle_rule_execution(self, rule):
-        a = 1/0
+        # a = 1/0
         self.thread_data.alerts_sent = 0
         next_run = datetime.datetime.utcnow() + rule['run_every']
         # Set endtime based on the rule's delay
@@ -2568,20 +2564,12 @@ def main(args=None):
             'Unhandled exception in ElastAlert: %s: %s' % (error_type, error_message),
             exc_info=True
         )
+
+        elastalert_exceptions_total.labels(
+            error_type=error_type,
+            error_message=error_message[:15]
+        ).inc()
         
-        # Increment Prometheus metric for monitoring
-        try:
-            elastalert_exceptions_total.labels(
-                error_type=error_type,
-                error_message=error_message[:15]
-            ).inc()
-        except Exception as metric_error:
-            # Don't let metric errors break exception handling
-            elastalert_logger.warning('Failed to record exception metric: %s' % metric_error)
-        
-        # Return 0 to prevent crashloop in K8s
-        # The exception is logged and metered, but process exits gracefully
-        # This allows K8s to restart if needed, but prevents continuous crashloops
         return 0
 
 

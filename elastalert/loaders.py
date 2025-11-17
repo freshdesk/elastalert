@@ -62,15 +62,8 @@ from elastalert.util import unix_to_dt
 from elastalert.util import unixms_to_dt
 from elastalert.yaml import read_yaml
 from elastalert.traceproviders import init_tracer, trace_span, get_recording_span
-from prometheus_client import Counter
+from elastalert.prometheus_wrapper import elastalert_load_rule_failed_total
 
-# Initialize Prometheus metric for rule loading exceptions
-# Created at module level, similar to prometheus_wrapper.py pattern
-elastalert_load_rule_failed_total = Counter(
-    'elastalert_load_rule_failed_total',
-    'Total number of exceptions encountered while loading rule files',
-    ['rule', 'tenant', 'error_type']
-)
 
 
 # load rules schema
@@ -187,6 +180,7 @@ class RulesLoader(object):
                     raise EAException('Duplicate rule named %s' % (rule['name']))
 
             except EAException as e: 
+                
                 elastalert_logger.error('Error loading file %s: %s' % (rule_file, e))
                 span = get_recording_span()
                 if span:

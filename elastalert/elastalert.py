@@ -2572,10 +2572,10 @@ def main(args=None):
             exc_info=True
         )
 
-        elastalert_exceptions_total.labels(
-            error_type=error_type,
-            error_message=error_message[:15]
-        ).inc()
+        # elastalert_exceptions_total.labels(
+        #     error_type=error_type,
+        #     error_message=error_message[:15]
+        # ).inc()
         
         return 0
 

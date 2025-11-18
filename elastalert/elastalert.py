@@ -50,6 +50,10 @@ from elastalert.traceproviders import init_tracer, trace_span, get_recording_spa
 from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 
+from prometheus_client import Counter
+from elastalert.prometheus_wrapper import elastalert_exceptions_total, elastalert_unhandled_exceptions_total
+
+
 
 class ElastAlerter(object):
     """ The main ElastAlert runner. This class holds all state about active rules,
@@ -2422,6 +2426,14 @@ class ElastAlerter(object):
     @trace_span("elastalert.handle_uncaught_exception")
     def handle_uncaught_exception(self, exception, rule):
         """ Disables a rule and sends a notification. """
+
+        rule_name = rule.get('name') or 'unknown'
+        tenant = "unknown"
+        if rule_name != 'unknown':
+            tenant = rule_name.split('_')[0]
+            error_type = exception.__class__.__name__
+            elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+        
         elastalert_logger.error(traceback.format_exc())
         self.handle_error('Uncaught exception running rule %s: %s' % (rule['name'], exception), {'rule': rule['name']})
         if self.disable_rules_on_error:
@@ -2498,7 +2510,6 @@ class ElastAlerter(object):
 
             # Save a dict with the top 5 events by key
             all_counts['top_events_%s' % (key)] = top_events_count
-
         return all_counts
 
     @trace_span("elastalert.next_alert_time")
@@ -2539,16 +2550,36 @@ def main(args=None):
     signal.signal(signal.SIGINT, handle_signal)
     if not args:
         args = sys.argv[1:]
-    client = ElastAlerter(args)
 
-    if client.prometheus_port and not client.debug:
-        p = PrometheusWrapper(client)
-        p.start()
+    try:
+        client = ElastAlerter(args)
 
-    if not client.args.silence:
-        client.start()
+        if client.prometheus_port and not client.debug:
+            p = PrometheusWrapper(client)
+            p.start()
+
+        if not client.args.silence:
+            client.start()
+    except Exception as e:
+        # Global exception handler inside main() - catch ALL unhandled exceptions
+        # This prevents the process from crashing and avoids crashloops in K8s
+        error_type = e.__class__.__name__
+        error_message = str(e)
+        
+        # Log the exception with full traceback for debugging
+        elastalert_logger.error(
+            'Unhandled exception in ElastAlert: %s: %s' % (error_type, error_message),
+            exc_info=True
+        )
+
+        elastalert_exceptions_total.labels(
+            error_type=error_type,
+            error_message=error_message[:15]
+        ).inc()
+        
+        return 0
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':    
     sys.exit(main(sys.argv[1:]))
     

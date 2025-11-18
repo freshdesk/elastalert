@@ -191,16 +191,13 @@ class RulesLoader(object):
                     span.set_attribute("exception.message", str(e))
 
                 # Increment Prometheus metric for exceptions
-                try:
-                    rule_name = rule.get('name') or 'unknown'
-                    tenant = "unknown"
-                    if rule_name != 'unknown':
-                        tenant = rule_name.split('_')[0]
-                    error_type = e.__class__.__name__
-                    elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
-                except Exception as metric_error:
-                    # Don't let metric errors break rule loading
-                    elastalert_logger.warning('Failed to record excep_total metric: %s' % metric_error)
+                
+                rule_name = rule.get('name') or 'unknown'
+                tenant = "unknown"
+                if rule_name != 'unknown':
+                    tenant = rule_name.split('_')[0]
+                error_type = e.__class__.__name__
+                elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
 
                 continue
 

@@ -15,6 +15,14 @@ elastalert_exceptions_total = prometheus_client.Counter(
         ['error_type', 'error_message']
 )
 
+
+elastalert_unhandled_exceptions_total = prometheus_client.Counter(
+        'elastalert_unhandled_exceptions_total',
+        'Total number of all unhandled exceptions in ElastAlert',
+        ['rule', 'tenant', 'error_type']
+)
+
+
 class PrometheusWrapper:
     """ Exposes ElastAlert metrics on a Prometheus metrics endpoint.
         Wraps ElastAlerter run_rule and writeback to collect metrics. """
@@ -39,6 +47,7 @@ class PrometheusWrapper:
         # Reference to module-level metric for consistency with self.metricname pattern
         self.elastalert_load_rule_failed_total = elastalert_load_rule_failed_total
         self.elastalert_exceptions_total = elastalert_exceptions_total
+        self.elastalert_unhandled_exceptions_total = elastalert_unhandled_exceptions_total
     def start(self):
         prometheus_client.start_http_server(self.prometheus_port)
 

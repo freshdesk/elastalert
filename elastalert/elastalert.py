@@ -51,7 +51,7 @@ from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 
 from prometheus_client import Counter
-from elastalert.prometheus_wrapper import elastalert_exceptions_total
+from elastalert.prometheus_wrapper import elastalert_exceptions_total, elastalert_unhandled_exceptions_total
 
 
 
@@ -1844,6 +1844,7 @@ class ElastAlerter(object):
 
         rule['has_run_once'] = True
         try:
+            # a = 1/0
             num_matches = self.run_rule(rule, endtime, rule.get('initial_starttime'))
         except EAException as e:
             self.handle_error("Error running rule %s: %s" % (rule['name'], e), {'rule': rule['name']})
@@ -2426,6 +2427,14 @@ class ElastAlerter(object):
     @trace_span("elastalert.handle_uncaught_exception")
     def handle_uncaught_exception(self, exception, rule):
         """ Disables a rule and sends a notification. """
+
+        rule_name = rule.get('name') or 'unknown'
+        tenant = "unknown"
+        if rule_name != 'unknown':
+            tenant = rule_name.split('_')[0]
+            error_type = exception.__class__.__name__
+            elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+        
         elastalert_logger.error(traceback.format_exc())
         self.handle_error('Uncaught exception running rule %s: %s' % (rule['name'], exception), {'rule': rule['name']})
         if self.disable_rules_on_error:

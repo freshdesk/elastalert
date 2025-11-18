@@ -1,5 +1,27 @@
 import prometheus_client
 
+# Initialize global exception metric at module level
+# This metric can be used even before PrometheusWrapper is instantiated
+# (e.g., in loaders.py during ElastAlerter initialization)
+elastalert_load_rule_failed_total = prometheus_client.Counter(
+    'elastalert_load_rule_failed_total',
+    'Total number of exceptions encountered while loading rule files',
+    ['rule', 'tenant', 'error_type']
+)
+
+elastalert_exceptions_total = prometheus_client.Counter(
+        'elastalert_exceptions_total',
+        'Total number of all unhandled exceptions in ElastAlert',
+        ['error_type', 'error_message']
+)
+
+
+elastalert_unhandled_exceptions_total = prometheus_client.Counter(
+        'elastalert_unhandled_exceptions_total',
+        'Total number of all unhandled exceptions in ElastAlert',
+        ['rule', 'tenant', 'error_type']
+)
+
 
 class PrometheusWrapper:
     """ Exposes ElastAlert metrics on a Prometheus metrics endpoint.
@@ -22,7 +44,10 @@ class PrometheusWrapper:
         self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name'])
         self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors for rule')
         self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
-
+        # Reference to module-level metric for consistency with self.metricname pattern
+        self.elastalert_load_rule_failed_total = elastalert_load_rule_failed_total
+        self.elastalert_exceptions_total = elastalert_exceptions_total
+        self.elastalert_unhandled_exceptions_total = elastalert_unhandled_exceptions_total
     def start(self):
         prometheus_client.start_http_server(self.prometheus_port)
 

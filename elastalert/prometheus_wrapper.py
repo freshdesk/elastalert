@@ -16,11 +16,11 @@ elastalert_exceptions_total = prometheus_client.Counter(
 )
 
 
-elastalert_unhandled_exceptions_total = prometheus_client.Counter(
-        'elastalert_unhandled_exceptions_total',
-        'Total number of all unhandled exceptions in ElastAlert',
-        ['rule', 'tenant', 'error_type']
-)
+# elastalert_unhandled_exceptions_total = prometheus_client.Counter(
+#         'elastalert_unhandled_exceptions_total',
+#         'Total number of all unhandled exceptions in ElastAlert',
+#         ['rule', 'tenant', 'error_type']
+# )
 
 
 class PrometheusWrapper:
@@ -31,9 +31,12 @@ class PrometheusWrapper:
         self.prometheus_port = client.prometheus_port
         self.run_rule = client.run_rule
         self.writeback = client.writeback
+        self.handle_uncaught_exception = client.handle_uncaught_exception
 
         client.run_rule = self.metrics_run_rule
         client.writeback = self.metrics_writeback
+        client.handle_uncaught_exception = self.metrics_handle_uncaught_exception
+
 
         # initialize prometheus metrics to be exposed
         self.prom_scrapes = prometheus_client.Counter('elastalert_scrapes', 'Number of scrapes for rule', ['rule_name'])
@@ -47,7 +50,9 @@ class PrometheusWrapper:
         # Reference to module-level metric for consistency with self.metricname pattern
         self.elastalert_load_rule_failed_total = elastalert_load_rule_failed_total
         self.elastalert_exceptions_total = elastalert_exceptions_total
-        self.elastalert_unhandled_exceptions_total = elastalert_unhandled_exceptions_total
+        self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type']
+)
+
     def start(self):
         prometheus_client.start_http_server(self.prometheus_port)
 
@@ -81,3 +86,16 @@ class PrometheusWrapper:
                 self.prom_alerts_silenced.labels(body['rule_name']).inc()
         finally:
             return res
+
+    def metrics_handle_uncaught_exception(self, exception, rule):
+        """ Increment counter every time rule is run """
+
+        try:
+            rule_name = rule.get('name') or 'unknown'
+            tenant = "unknown"
+            if rule_name != 'unknown':
+                tenant = rule_name.split('_')[0]
+                error_type = exception.__class__.__name__
+                self.elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+        finally:
+            return self.handle_uncaught_exception(exception, rule)

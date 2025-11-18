@@ -2426,13 +2426,13 @@ class ElastAlerter(object):
     @trace_span("elastalert.handle_uncaught_exception")
     def handle_uncaught_exception(self, exception, rule):
         """ Disables a rule and sends a notification. """
-
-        rule_name = rule.get('name') or 'unknown'
-        tenant = "unknown"
-        if rule_name != 'unknown':
-            tenant = rule_name.split('_')[0]
-            error_type = exception.__class__.__name__
-            elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+        a = 1/0
+        # rule_name = rule.get('name') or 'unknown'
+        # tenant = "unknown"
+        # if rule_name != 'unknown':
+        #     tenant = rule_name.split('_')[0]
+        #     error_type = exception.__class__.__name__
+        #     elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
         
         elastalert_logger.error(traceback.format_exc())
         self.handle_error('Uncaught exception running rule %s: %s' % (rule['name'], exception), {'rule': rule['name']})

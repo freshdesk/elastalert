@@ -51,7 +51,7 @@ from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 
 from prometheus_client import Counter
-from elastalert.prometheus_wrapper import elastalert_exceptions_total, elastalert_unhandled_exceptions_total
+# from elastalert.prometheus_wrapper import elastalert_exceptions_total, elastalert_unhandled_exceptions_total
 
 
 

@@ -179,7 +179,7 @@ class RulesLoader(object):
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
                 
-                raise Exception("Test exception")
+                raise EAException("Test EAException raised")
 
             except EAException as e: 
                 

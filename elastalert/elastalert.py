@@ -1844,7 +1844,6 @@ class ElastAlerter(object):
 
         rule['has_run_once'] = True
         try:
-            a = 1/0
             num_matches = self.run_rule(rule, endtime, rule.get('initial_starttime'))
         except EAException as e:
             self.handle_error("Error running rule %s: %s" % (rule['name'], e), {'rule': rule['name']})

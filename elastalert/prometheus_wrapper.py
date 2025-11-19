@@ -89,7 +89,7 @@ class PrometheusWrapper:
 
     def metrics_handle_uncaught_exception(self, exception, rule):
         """ Increment counter every time rule is run """
-
+        print("\ncoming_here wrapper :: 22222222222\n")
         try:
             rule_name = rule.get('name') or 'unknown'
             tenant = "unknown"

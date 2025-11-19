@@ -1845,6 +1845,7 @@ class ElastAlerter(object):
         rule['has_run_once'] = True
         try:
             num_matches = self.run_rule(rule, endtime, rule.get('initial_starttime'))
+            a = 1/0
         except EAException as e:
             self.handle_error("Error running rule %s: %s" % (rule['name'], e), {'rule': rule['name']})
         except Exception as e:
@@ -2426,7 +2427,7 @@ class ElastAlerter(object):
     @trace_span("elastalert.handle_uncaught_exception")
     def handle_uncaught_exception(self, exception, rule):
         """ Disables a rule and sends a notification. """
-        a = 1/0
+        # a = 1/0
         # rule_name = rule.get('name') or 'unknown'
         # tenant = "unknown"
         # if rule_name != 'unknown':

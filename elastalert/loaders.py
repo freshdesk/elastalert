@@ -185,7 +185,9 @@ class RulesLoader(object):
                 raise EAException('test Exception')
             except EAException as e: 
                 
-                elastalert_logger.error('Error loading file %s: %s' % (rule_file, e))
+                elastalert_logger.error('Error[] loading file %s: %s' % (rule_file, e))
+                elastalert_logger.error("[But INFO] ########################Before PrometheusWrapper.increment_load_rule_failed_total########################")
+                PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
 
                 # span = get_recording_span()
                 # if span:
@@ -202,8 +204,7 @@ class RulesLoader(object):
                 #     tenant = rule_name.split('_')[0]
                 # error_type = e.__class__.__name__
 
-                print("########################Before PrometheusWrapper.increment_load_rule_failed_total########################")
-                PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
+
                 
                 continue
 

@@ -202,7 +202,7 @@ class RulesLoader(object):
                 #     tenant = rule_name.split('_')[0]
                 # error_type = e.__class__.__name__
                 
-                PrometheusWrapper.increment_load_rule_failed_total(rule=rule, excepion=e)
+                PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
                 
                 continue
 

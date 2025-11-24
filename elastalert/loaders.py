@@ -201,7 +201,8 @@ class RulesLoader(object):
                 # if rule_name != 'unknown':
                 #     tenant = rule_name.split('_')[0]
                 # error_type = e.__class__.__name__
-                
+
+                print("########################Before PrometheusWrapper.increment_load_rule_failed_total########################")
                 PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
                 
                 continue

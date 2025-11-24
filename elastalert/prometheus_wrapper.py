@@ -113,7 +113,7 @@ class PrometheusWrapper:
     def increment_load_rule_failed_total(rule, e):
         """Static method to increment the load rule failed metric.
         Can be called as PrometheusWrapper.increment_load_rule_failed_total() without an instance."""
-
+        print("########################increment_load_rule_failed_total########################")
         rule_name = rule.get('name') or 'unknown'
         tenant = "unknown"
         if rule_name != 'unknown':
@@ -121,5 +121,7 @@ class PrometheusWrapper:
         error_type = e.__class__.__name__
 
         if elastalert_load_rule_failed_total is not None:
+            print("########################elastalert_load_rule_failed_total is not None########################")
             elastalert_load_rule_failed_total.labels(rule=rule, tenant=tenant, error_type=error_type).inc()
-
+        else:
+            print("########################elastalert_load_rule_failed_total is None ########################")

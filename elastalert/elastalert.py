@@ -2434,7 +2434,7 @@ class ElastAlerter(object):
         #     error_type = exception.__class__.__name__
         #     elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
         
-        print("\ncoming_here handle_uncaught_exception :: 11111111111\n")
+        print("\ncoming_here handle_uncaught_exception :: 22222222\n")
         elastalert_logger.error(traceback.format_exc())
         self.handle_error('Uncaught exception running rule %s: %s' % (rule['name'], exception), {'rule': rule['name']})
         if self.disable_rules_on_error:

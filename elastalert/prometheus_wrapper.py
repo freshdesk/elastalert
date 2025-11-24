@@ -1,13 +1,15 @@
 import prometheus_client
+from elastalert.util import EAException
+
 
 # Initialize global exception metric at module level
 # This metric can be used even before PrometheusWrapper is instantiated
 # (e.g., in loaders.py during ElastAlerter initialization)
-elastalert_load_rule_failed_total = prometheus_client.Counter(
-    'elastalert_load_rule_failed_total',
-    'Total number of exceptions encountered while loading rule files',
-    ['rule', 'tenant', 'error_type']
-)
+
+
+# Module-level reference to the metric (set when PrometheusWrapper is instantiated)
+# This allows the static method to access the metric
+elastalert_load_rule_failed_total = None
 
 elastalert_exceptions_total = prometheus_client.Counter(
         'elastalert_exceptions_total',
@@ -21,6 +23,8 @@ elastalert_exceptions_total = prometheus_client.Counter(
 #         'Total number of all unhandled exceptions in ElastAlert',
 #         ['rule', 'tenant', 'error_type']
 # )
+
+
 
 
 class PrometheusWrapper:
@@ -47,11 +51,15 @@ class PrometheusWrapper:
         self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name'])
         self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors for rule')
         self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
+        # Initialize prometheus metrics similar to other metrics above
+        self.elastalert_load_rule_failed_total = prometheus_client.Counter('elastalert_load_rule_failed_total','Total number of exceptions encountered while loading rule files',['rule', 'tenant', 'error_type'])
         # Reference to module-level metric for consistency with self.metricname pattern
-        self.elastalert_load_rule_failed_total = elastalert_load_rule_failed_total
         self.elastalert_exceptions_total = elastalert_exceptions_total
-        self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type']
-)
+        self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type'])
+        
+        # Set module-level reference so static method can use it
+        global elastalert_load_rule_failed_total
+        elastalert_load_rule_failed_total = self.elastalert_load_rule_failed_total
 
     def start(self):
         prometheus_client.start_http_server(self.prometheus_port)
@@ -89,13 +97,29 @@ class PrometheusWrapper:
 
     def metrics_handle_uncaught_exception(self, exception, rule):
         """ Increment counter every time rule is run """
-        print("\ncoming_here wrapper :: 22222222222\n")
+        print("\ncoming_here wrapper :: 11111111\n")
         try:
             rule_name = rule.get('name') or 'unknown'
             tenant = "unknown"
             if rule_name != 'unknown':
                 tenant = rule_name.split('_')[0]
-                error_type = exception.__class__.__name__
-                self.elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+            error_type = exception.__class__.__name__
+            self.elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
         finally:
             return self.handle_uncaught_exception(exception, rule)
+
+
+    @staticmethod
+    def increment_load_rule_failed_total(rule, e):
+        """Static method to increment the load rule failed metric.
+        Can be called as PrometheusWrapper.increment_load_rule_failed_total() without an instance."""
+
+        rule_name = rule.get('name') or 'unknown'
+        tenant = "unknown"
+        if rule_name != 'unknown':
+            tenant = rule_name.split('_')[0]
+        error_type = e.__class__.__name__
+
+        if elastalert_load_rule_failed_total is not None:
+            elastalert_load_rule_failed_total.labels(rule=rule, tenant=tenant, error_type=error_type).inc()
+

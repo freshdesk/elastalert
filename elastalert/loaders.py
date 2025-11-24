@@ -62,7 +62,8 @@ from elastalert.util import unix_to_dt
 from elastalert.util import unixms_to_dt
 from elastalert.yaml import read_yaml
 from elastalert.traceproviders import init_tracer, trace_span, get_recording_span
-from elastalert.prometheus_wrapper import elastalert_load_rule_failed_total
+# from elastalert.prometheus_wrapper import elastalert_load_rule_failed_total
+from elastalert.prometheus_wrapper import PrometheusWrapper
 
 
 
@@ -163,6 +164,9 @@ class RulesLoader(object):
         :return: List of rules
         :rtype: list
         """
+
+
+
         names = []
         use_rule = None if args is None else args.rule
 
@@ -182,21 +186,24 @@ class RulesLoader(object):
             except EAException as e: 
                 
                 elastalert_logger.error('Error loading file %s: %s' % (rule_file, e))
-                span = get_recording_span()
-                if span:
-                    span.set_attribute("error", True)
-                    span.set_attribute("exception.type", e.__class__.__name__)
-                    span.set_attribute("exception.message", str(e))
+
+                # span = get_recording_span()
+                # if span:
+                #     span.set_attribute("error", True)
+                #     span.set_attribute("exception.type", e.__class__.__name__)
+                #     span.set_attribute("exception.message", str(e))
 
                 # Increment Prometheus metric for exceptions
                 
-                rule_name = rule.get('name') or 'unknown'
-                tenant = "unknown"
-                if rule_name != 'unknown':
-                    tenant = rule_name.split('_')[0]
-                error_type = e.__class__.__name__
-                elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
 
+                # rule_name = rule.get('name') or 'unknown'
+                # tenant = "unknown"
+                # if rule_name != 'unknown':
+                #     tenant = rule_name.split('_')[0]
+                # error_type = e.__class__.__name__
+                
+                PrometheusWrapper.increment_load_rule_failed_total(rule=rule, exception=e)
+                
                 continue
 
             rules.append(rule)

@@ -3,14 +3,13 @@ from elastalert.util import EAException
 from elastalert.util import elastalert_logger
 
 
-# Initialize global exception metric at module level
-# This metric can be used even before PrometheusWrapper is instantiated
-# (e.g., in loaders.py during ElastAlerter initialization)
 
+elastalert_load_rule_failed_total = prometheus_client.Counter(
+    'elastalert_load_rule_failed_total',
+    'Total number of exceptions encountered while loading rule files',
+    ['rule', 'tenant', 'error_type']
+)
 
-# Module-level reference to the metric (set when PrometheusWrapper is instantiated)
-# This allows the static method to access the metric
-elastalert_load_rule_failed_total = None
 
 elastalert_exceptions_total = prometheus_client.Counter(
         'elastalert_exceptions_total',
@@ -53,14 +52,10 @@ class PrometheusWrapper:
         self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors for rule')
         self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
         # Initialize prometheus metrics similar to other metrics above
-        self.elastalert_load_rule_failed_total = prometheus_client.Counter('elastalert_load_rule_failed_total','Total number of exceptions encountered while loading rule files',['rule', 'tenant', 'error_type'])
+        self.elastalert_load_rule_failed_total = elastalert_load_rule_failed_total
         # Reference to module-level metric for consistency with self.metricname pattern
         self.elastalert_exceptions_total = elastalert_exceptions_total
         self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type'])
-        
-        # Set module-level reference so static method can use it
-        global elastalert_load_rule_failed_total
-        elastalert_load_rule_failed_total = self.elastalert_load_rule_failed_total
 
     def start(self):
         prometheus_client.start_http_server(self.prometheus_port)
@@ -110,23 +105,10 @@ class PrometheusWrapper:
             return self.handle_uncaught_exception(exception, rule)
 
 
-    @staticmethod
-    def increment_load_rule_failed_total(rule, e):
-        """Static method to increment the load rule failed metric.
-        Can be called as PrometheusWrapper.increment_load_rule_failed_total() without an instance."""
-        elastalert_logger.error("########################increment_load_rule_failed_total########################")
-        # Handle case where rule might be None (if load_configuration failed)
-        rule_name = 'unknown'
-        if rule is not None:
-            rule_name = rule.get('name') or 'unknown'
-        
+    def increment_load_rule_failed_total(rule,e):
+        rule_name = rule.get('name') or 'unknown'
         tenant = "unknown"
         if rule_name != 'unknown':
             tenant = rule_name.split('_')[0]
         error_type = e.__class__.__name__
-
-        if elastalert_load_rule_failed_total is not None:
-            elastalert_logger.error("########################elastalert_load_rule_failed_total is not None########################")
-            elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
-        else:
-            elastalert_logger.error("########################elastalert_load_rule_failed_total is None ########################")
+        elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()

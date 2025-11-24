@@ -174,6 +174,7 @@ class RulesLoader(object):
         rules = []
         rule_files = self.get_names(conf, use_rule)
         for rule_file in rule_files:
+            rule = None  # Initialize to handle case where load_configuration fails
             try:
                 rule = self.load_configuration(rule_file, conf, args)
                 # A rule failed to load, don't try to process it
@@ -186,13 +187,18 @@ class RulesLoader(object):
             except EAException as e: 
                 
                 elastalert_logger.error('Error[] loading file %s: %s' % (rule_file, e))
-                elastalert_logger.error("[But INFO] ########################Before PrometheusWrapper.increment_load_rule_failed_total########################")
-                PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
+                print("[But INFO] ########################Before PrometheusWrapper.increment_load_rule_failed_total########################")
+                try:
+                    PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
+                except Exception as metric_error:
+                    elastalert_logger.error('Error incrementing metric: %s' % metric_error)
+                    import traceback
+                    traceback.print_exc()
 
                 # span = get_recording_span()
                 # if span:
                 #     span.set_attribute("error", True)
-                #     span.set_attribute("exception.type", e.__class__.__name__)
+                #     span.set_attribute("exception.type", e.__class__.__name__)elastalert_logger
                 #     span.set_attribute("exception.message", str(e))
 
                 # Increment Prometheus metric for exceptions

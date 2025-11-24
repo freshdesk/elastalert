@@ -1,5 +1,6 @@
 import prometheus_client
 from elastalert.util import EAException
+from elastalert.util import elastalert_logger
 
 
 # Initialize global exception metric at module level
@@ -113,7 +114,7 @@ class PrometheusWrapper:
     def increment_load_rule_failed_total(rule, e):
         """Static method to increment the load rule failed metric.
         Can be called as PrometheusWrapper.increment_load_rule_failed_total() without an instance."""
-        print("########################increment_load_rule_failed_total########################")
+        elastalert_logger.error("########################increment_load_rule_failed_total########################")
         # Handle case where rule might be None (if load_configuration failed)
         rule_name = 'unknown'
         if rule is not None:
@@ -125,7 +126,7 @@ class PrometheusWrapper:
         error_type = e.__class__.__name__
 
         if elastalert_load_rule_failed_total is not None:
-            print("########################elastalert_load_rule_failed_total is not None########################")
+            elastalert_logger.error("########################elastalert_load_rule_failed_total is not None########################")
             elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
         else:
-            print("########################elastalert_load_rule_failed_total is None ########################")
+            elastalert_logger.error("########################elastalert_load_rule_failed_total is None ########################")

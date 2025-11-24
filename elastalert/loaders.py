@@ -187,8 +187,9 @@ class RulesLoader(object):
             except EAException as e: 
                 
                 elastalert_logger.error('Error[] loading file %s: %s' % (rule_file, e))
-                print("[But INFO] ########################Before PrometheusWrapper.increment_load_rule_failed_total########################")
+                elastalert_logger.error("[But INFO] ########################Before PrometheusWrapper.increment_load_rule_failed_total########################")
                 try:
+                    print("[But INFO] ######################## Executing Try Block ########################")
                     PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
                 except Exception as metric_error:
                     elastalert_logger.error('Error incrementing metric: %s' % metric_error)

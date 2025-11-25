@@ -2539,15 +2539,17 @@ def main(args=None):
     signal.signal(signal.SIGINT, handle_signal)
     if not args:
         args = sys.argv[1:]
-    client = ElastAlerter(args)
+    try:
+        client = ElastAlerter(args)
 
-    if client.prometheus_port and not client.debug:
-        p = PrometheusWrapper(client)
-        p.start()
+        if client.prometheus_port and not client.debug:
+            p = PrometheusWrapper(client)
+            p.start()
 
-    if not client.args.silence:
-        client.start()
-
+        if not client.args.silence:
+            client.start()
+    except Exception as e:
+        elastalert_logger.error("Error in main: %s" % (e))
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

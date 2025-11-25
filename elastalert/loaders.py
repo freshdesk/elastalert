@@ -177,6 +177,9 @@ class RulesLoader(object):
             except EAException as e:
                 elastalert_logger.error("Error loading file %s: %s" % (rule_file, e))
                 continue
+            except Exception as e:
+                elastalert_logger.error("Error loading file %s: %s" % (rule_file, e))
+                continue
 
             rules.append(rule)
             names.append(rule['name'])

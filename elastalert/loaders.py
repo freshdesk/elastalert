@@ -183,7 +183,7 @@ class RulesLoader(object):
                     continue
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
-                raise EAException('test Exception')
+                # raise EAException('test Exception')
             except EAException as e: 
                 
                 elastalert_logger.error('Error[] loading file %s: %s' % (rule_file, e))

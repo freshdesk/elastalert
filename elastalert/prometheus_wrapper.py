@@ -121,6 +121,6 @@ class PrometheusWrapper:
         cls.elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
     
     @classmethod
-    def get_elastalert_exceptions_total(cls):
+    def increment_elastalert_exceptions_total(cls, error_type, error_message):
         """Class method to get the elastalert_exceptions_total metric."""
-        return cls.elastalert_exceptions_total
+        cls.elastalert_exceptions_total.labels(error_type=error_type, error_message=error_message[:15]).inc()

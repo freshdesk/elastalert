@@ -2554,7 +2554,7 @@ def main(args=None):
 
     try:
         client = ElastAlerter(args)
-
+        a = 1/0
         if client.prometheus_port and not client.debug:
             p = PrometheusWrapper(client)
             p.start()
@@ -2573,12 +2573,8 @@ def main(args=None):
             exc_info=True
         )
 
-        # elastalert_exceptions_total.labels(
-        #     error_type=error_type,
-        #     error_message=error_message[:15]
-        # ).inc()
+        PrometheusWrapper.increment_elastalert_exceptions_total(error_type, error_message)
         
-        return 0
 
 
 if __name__ == '__main__':    

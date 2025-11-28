@@ -2574,6 +2574,8 @@ def main(args=None):
         )
 
         PrometheusWrapper.increment_elastalert_exceptions_total(error_type, error_message)
+        return 0
+    
         
 
 

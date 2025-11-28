@@ -18,13 +18,13 @@ class PrometheusWrapper:
         Wraps ElastAlerter run_rule and writeback to collect metrics. """
     
     # Class variables for metrics (initialized when class is defined)
-    _elastalert_load_rule_failed_total = prometheus_client.Counter(
+    elastalert_load_rule_failed_total = prometheus_client.Counter(
         'elastalert_load_rule_failed_total',
         'Total number of exceptions encountered while loading rule files',
         ['rule', 'tenant', 'error_type']
     )
     
-    _elastalert_exceptions_total = prometheus_client.Counter(
+    elastalert_exceptions_total = prometheus_client.Counter(
         'elastalert_exceptions_total',
         'Total number of all unhandled exceptions in ElastAlert',
         ['error_type', 'error_message']
@@ -51,8 +51,8 @@ class PrometheusWrapper:
         self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors for rule')
         self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
         # Reference to class-level metrics for consistency with self.metricname pattern
-        self.elastalert_load_rule_failed_total = PrometheusWrapper._elastalert_load_rule_failed_total
-        self.elastalert_exceptions_total = PrometheusWrapper._elastalert_exceptions_total
+        self.elastalert_load_rule_failed_total = PrometheusWrapper.elastalert_load_rule_failed_total
+        self.elastalert_exceptions_total = PrometheusWrapper.elastalert_exceptions_total
         self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type'])
 
     def start(self):
@@ -118,9 +118,9 @@ class PrometheusWrapper:
         error_type = e.__class__.__name__
         
         # Increment the metric
-        cls._elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+        cls.elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
     
     @classmethod
     def get_elastalert_exceptions_total(cls):
         """Class method to get the elastalert_exceptions_total metric."""
-        return cls._elastalert_exceptions_total
+        return cls.elastalert_exceptions_total

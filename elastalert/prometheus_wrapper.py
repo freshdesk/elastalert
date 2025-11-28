@@ -4,20 +4,6 @@ from elastalert.util import elastalert_logger
 
 
 
-elastalert_load_rule_failed_total = prometheus_client.Counter(
-    'elastalert_load_rule_failed_total',
-    'Total number of exceptions encountered while loading rule files',
-    ['rule', 'tenant', 'error_type']
-)
-
-
-elastalert_exceptions_total = prometheus_client.Counter(
-        'elastalert_exceptions_total',
-        'Total number of all unhandled exceptions in ElastAlert',
-        ['error_type', 'error_message']
-)
-
-
 # elastalert_unhandled_exceptions_total = prometheus_client.Counter(
 #         'elastalert_unhandled_exceptions_total',
 #         'Total number of all unhandled exceptions in ElastAlert',
@@ -30,6 +16,19 @@ elastalert_exceptions_total = prometheus_client.Counter(
 class PrometheusWrapper:
     """ Exposes ElastAlert metrics on a Prometheus metrics endpoint.
         Wraps ElastAlerter run_rule and writeback to collect metrics. """
+    
+    # Class variables for metrics (initialized when class is defined)
+    _elastalert_load_rule_failed_total = prometheus_client.Counter(
+        'elastalert_load_rule_failed_total',
+        'Total number of exceptions encountered while loading rule files',
+        ['rule', 'tenant', 'error_type']
+    )
+    
+    _elastalert_exceptions_total = prometheus_client.Counter(
+        'elastalert_exceptions_total',
+        'Total number of all unhandled exceptions in ElastAlert',
+        ['error_type', 'error_message']
+    )
 
     def __init__(self, client):
         self.prometheus_port = client.prometheus_port
@@ -51,10 +50,9 @@ class PrometheusWrapper:
         self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name'])
         self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors for rule')
         self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
-        # Initialize prometheus metrics similar to other metrics above
-        self.elastalert_load_rule_failed_total = elastalert_load_rule_failed_total
-        # Reference to module-level metric for consistency with self.metricname pattern
-        self.elastalert_exceptions_total = elastalert_exceptions_total
+        # Reference to class-level metrics for consistency with self.metricname pattern
+        self.elastalert_load_rule_failed_total = PrometheusWrapper._elastalert_load_rule_failed_total
+        self.elastalert_exceptions_total = PrometheusWrapper._elastalert_exceptions_total
         self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type'])
 
     def start(self):
@@ -105,10 +103,24 @@ class PrometheusWrapper:
             return self.handle_uncaught_exception(exception, rule)
 
 
-    def increment_load_rule_failed_total(rule,e):
-        rule_name = rule.get('name') or 'unknown'
+    @classmethod
+    def increment_load_rule_failed_total(cls, rule, e):
+        """Class method to increment the load rule failed metric.
+        Can be called as PrometheusWrapper.increment_load_rule_failed_total() without an instance."""
+        # Handle case where rule might be None (if load_configuration failed)
+        rule_name = 'unknown'
+        if rule is not None:
+            rule_name = rule.get('name') or 'unknown'
+        
         tenant = "unknown"
         if rule_name != 'unknown':
             tenant = rule_name.split('_')[0]
         error_type = e.__class__.__name__
-        elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+        
+        # Increment the metric
+        cls._elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+    
+    @classmethod
+    def get_elastalert_exceptions_total(cls):
+        """Class method to get the elastalert_exceptions_total metric."""
+        return cls._elastalert_exceptions_total

@@ -2560,7 +2560,6 @@ def main(args=None):
 
         if not client.args.silence:
             client.start()
-        a = 1/0
     except Exception as e:
         # Global exception handler inside main() - catch ALL unhandled exceptions
         # This prevents the process from crashing and avoids crashloops in K8s

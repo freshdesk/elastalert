@@ -1845,7 +1845,6 @@ class ElastAlerter(object):
         rule['has_run_once'] = True
         try:
             num_matches = self.run_rule(rule, endtime, rule.get('initial_starttime'))
-            a = 1/0
         except EAException as e:
             self.handle_error("Error running rule %s: %s" % (rule['name'], e), {'rule': rule['name']})
         except Exception as e:
@@ -2515,8 +2514,6 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.next_alert_time")
     def next_alert_time(self, rule, name, timestamp):
-
-        a = 1/0
 
         """ Calculate an 'until' time and exponent based on how much past the last 'until' we are. """
         if name in self.silence_cache:

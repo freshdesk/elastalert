@@ -2515,6 +2515,9 @@ class ElastAlerter(object):
 
     @trace_span("elastalert.next_alert_time")
     def next_alert_time(self, rule, name, timestamp):
+
+        a = 1/0
+
         """ Calculate an 'until' time and exponent based on how much past the last 'until' we are. """
         if name in self.silence_cache:
             last_until, exponent = self.silence_cache[name]
@@ -2554,7 +2557,6 @@ def main(args=None):
 
     try:
         client = ElastAlerter(args)
-        a = 1/0
         if client.prometheus_port and not client.debug:
             p = PrometheusWrapper(client)
             p.start()

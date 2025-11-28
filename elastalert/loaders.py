@@ -183,13 +183,13 @@ class RulesLoader(object):
                     continue
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
-                # raise EAException('test Exception')
+                raise EAException('test Exception')
             except EAException as e: 
                 
                 elastalert_logger.error('Error[] loading file %s: %s' % (rule_file, e))
                 PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
                 
-                continue
+                # continue
 
             rules.append(rule)
             names.append(rule['name'])

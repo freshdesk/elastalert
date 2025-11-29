@@ -69,9 +69,6 @@ class PrometheusWrapper:
                 else:
                     self.prom_alerts_not_sent.labels(body['rule_name']).inc()
             elif doc_type == 'elastalert_error':
-                print("coming_here")
-                print(body)
-                print("pt 2")
                 self.prom_errors.inc()
             elif doc_type == 'silence':
                 self.prom_alerts_silenced.labels(body['rule_name']).inc()
@@ -80,11 +77,10 @@ class PrometheusWrapper:
 
     def metrics_handle_uncaught_exception(self, exception, rule):
         """ Increment counter every time rule is run """
-        print("\ncoming_here wrapper :: 11111111\n")
         try:
             rule_name = rule.get('name') or 'unknown'
             tenant = "unknown"
-            if rule_name != 'unknown':
+            if rule_name != 'unknown' and '_' in rule_name:
                 tenant = rule_name.split('_')[0]
             error_type = exception.__class__.__name__
             self.elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
@@ -102,7 +98,7 @@ class PrometheusWrapper:
             rule_name = rule.get('name') or 'unknown'
         
         tenant = "unknown"
-        if rule_name != 'unknown':
+        if rule_name != 'unknown' and '_' in rule_name:
             tenant = rule_name.split('_')[0]
         error_type = e.__class__.__name__
         

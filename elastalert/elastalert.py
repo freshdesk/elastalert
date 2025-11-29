@@ -2549,8 +2549,16 @@ def main(args=None):
         if not client.args.silence:
             client.start()
     except Exception as e:
-        elastalert_logger.error("Error in main: %s" % (e))
+        error_type = e.__class__.__name__
+        error_message = str(e)
+        elastalert_logger.error(
+            'Unhandled exception in ElastAlert: %s: %s' % (error_type, error_message),
+            exc_info=True
+        )
 
+        PrometheusWrapper.increment_elastalert_exceptions_total(error_type, error_message)
+    
+    
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
     

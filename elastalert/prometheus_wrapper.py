@@ -1,17 +1,34 @@
 import prometheus_client
-
+from elastalert.util import EAException
+from elastalert.util import elastalert_logger
 
 class PrometheusWrapper:
     """ Exposes ElastAlert metrics on a Prometheus metrics endpoint.
         Wraps ElastAlerter run_rule and writeback to collect metrics. """
+    
+    # Class variables for metrics (initialized when class is defined)
+    elastalert_load_rule_failed_total = prometheus_client.Counter(
+        'elastalert_load_rule_failed_total',
+        'Total number of exceptions encountered while loading rule files',
+        ['rule', 'tenant', 'error_type']
+    )
+    
+    elastalert_exceptions_total = prometheus_client.Counter(
+        'elastalert_exceptions_total',
+        'Total number of all unhandled exceptions in ElastAlert',
+        ['error_type', 'error_message']
+    )
 
     def __init__(self, client):
         self.prometheus_port = client.prometheus_port
         self.run_rule = client.run_rule
         self.writeback = client.writeback
+        self.handle_uncaught_exception = client.handle_uncaught_exception
 
         client.run_rule = self.metrics_run_rule
         client.writeback = self.metrics_writeback
+        client.handle_uncaught_exception = self.metrics_handle_uncaught_exception
+
 
         # initialize prometheus metrics to be exposed
         self.prom_scrapes = prometheus_client.Counter('elastalert_scrapes', 'Number of scrapes for rule', ['rule_name'])
@@ -22,6 +39,10 @@ class PrometheusWrapper:
         self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name'])
         self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors for rule')
         self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
+        # Reference to class-level metrics for consistency with self.metricname pattern
+        self.elastalert_load_rule_failed_total = PrometheusWrapper.elastalert_load_rule_failed_total
+        self.elastalert_exceptions_total = PrometheusWrapper.elastalert_exceptions_total
+        self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type'])
 
     def start(self):
         prometheus_client.start_http_server(self.prometheus_port)
@@ -56,3 +77,39 @@ class PrometheusWrapper:
                 self.prom_alerts_silenced.labels(body['rule_name']).inc()
         finally:
             return res
+
+    def metrics_handle_uncaught_exception(self, exception, rule):
+        """ Increment counter every time rule is run """
+        print("\ncoming_here wrapper :: 11111111\n")
+        try:
+            rule_name = rule.get('name') or 'unknown'
+            tenant = "unknown"
+            if rule_name != 'unknown':
+                tenant = rule_name.split('_')[0]
+            error_type = exception.__class__.__name__
+            self.elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+        finally:
+            return self.handle_uncaught_exception(exception, rule)
+
+
+    @classmethod
+    def increment_load_rule_failed_total(cls, rule, e):
+        """Class method to increment the load rule failed metric.
+        Can be called as PrometheusWrapper.increment_load_rule_failed_total() without an instance."""
+        # Handle case where rule might be None (if load_configuration failed)
+        rule_name = 'unknown'
+        if rule is not None:
+            rule_name = rule.get('name') or 'unknown'
+        
+        tenant = "unknown"
+        if rule_name != 'unknown':
+            tenant = rule_name.split('_')[0]
+        error_type = e.__class__.__name__
+        
+        # Increment the metric
+        cls.elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+    
+    @classmethod
+    def increment_elastalert_exceptions_total(cls, error_type, error_message):
+        """Class method to get the elastalert_exceptions_total metric."""
+        cls.elastalert_exceptions_total.labels(error_type=error_type, error_message=error_message[:15]).inc()

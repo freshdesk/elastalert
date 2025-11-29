@@ -61,6 +61,7 @@ from elastalert.util import ts_to_dt_with_format
 from elastalert.util import unix_to_dt
 from elastalert.util import unixms_to_dt
 from elastalert.yaml import read_yaml
+from elastalert.prometheus_wrapper import PrometheusWrapper
 
 
 # load rules schema
@@ -166,6 +167,7 @@ class RulesLoader(object):
         rules = []
         rule_files = self.get_names(conf, use_rule)
         for rule_file in rule_files:
+            rule = None  # Initialize to handle case where load_configuration fails
             try:
                 rule = self.load_configuration(rule_file, conf, args)
                 # A rule failed to load, don't try to process it
@@ -175,10 +177,12 @@ class RulesLoader(object):
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
             except EAException as e:
-                elastalert_logger.error("Error loading file %s: %s" % (rule_file, e))
+                elastalert_logger.error('Error loading rule file %s: %s' % (rule_file, e))
+                PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
                 continue
             except Exception as e:
-                elastalert_logger.error("Error loading file %s: %s" % (rule_file, e))
+                elastalert_logger.error('Error loading file %s: %s' % (rule_file, e))
+                PrometheusWrapper.increment_load_rule_failed_total(rule=rule, e=e)
                 continue
 
             rules.append(rule)

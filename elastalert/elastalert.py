@@ -2556,7 +2556,7 @@ def main(args=None):
             exc_info=True
         )
 
-        PrometheusWrapper.increment_elastalert_exceptions_total(error_type, error_message)
+        PrometheusWrapper.increment_elastalert_exceptions_total(error_type)
     
     
 if __name__ == '__main__':

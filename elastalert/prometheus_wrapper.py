@@ -16,7 +16,7 @@ class PrometheusWrapper:
     elastalert_exceptions_total = prometheus_client.Counter(
         'elastalert_exceptions_total',
         'Total number of all unhandled exceptions in ElastAlert',
-        ['error_type', 'error_message']
+        ['error_type']
     )
 
     def __init__(self, client):
@@ -106,6 +106,6 @@ class PrometheusWrapper:
         cls.elastalert_load_rule_failed_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
     
     @classmethod
-    def increment_elastalert_exceptions_total(cls, error_type, error_message):
+    def increment_elastalert_exceptions_total(cls, error_type):
         """Class method to get the elastalert_exceptions_total metric."""
-        cls.elastalert_exceptions_total.labels(error_type=error_type, error_message=error_message[:15]).inc()
+        cls.elastalert_exceptions_total.labels(error_type=error_type).inc()

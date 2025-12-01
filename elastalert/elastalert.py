@@ -1925,6 +1925,7 @@ class ElastAlerter(object):
         :param matches: A list of matches.
         :param rule: A rule configuration.
         """
+        span = get_recording_span()
         if not matches:
             return
 
@@ -1999,6 +2000,11 @@ class ElastAlerter(object):
             else:
                 self.thread_data.alerts_sent += 1
                 alert_sent = True
+                elastalert_logger.info("Alert sent for rule %s - Tenant : %s" % (rule['name'], rule.get('tenant')))
+                if span:
+                    span.set_attribute("alert.sent", True)
+                    span.set_attribute("alert.rule", rule.get('name'))
+                    span.set_attribute("alert.tenant", rule.get('tenant'))
 
         # Write the alert(s) to ES
         agg_id = None

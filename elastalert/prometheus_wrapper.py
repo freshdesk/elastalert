@@ -120,3 +120,4 @@ class PrometheusWrapper:
             tenant = rule_name.split('_')[0]
 
         return tenant
+        

@@ -31,14 +31,14 @@ class PrometheusWrapper:
 
 
         # initialize prometheus metrics to be exposed
-        self.prom_scrapes = prometheus_client.Counter('elastalert_scrapes', 'Number of scrapes for rule', ['rule_name'])
-        self.prom_hits = prometheus_client.Counter('elastalert_hits', 'Number of hits for rule', ['rule_name'])
-        self.prom_matches = prometheus_client.Counter('elastalert_matches', 'Number of matches for rule', ['rule_name'])
-        self.prom_time_taken = prometheus_client.Counter('elastalert_time_taken', 'Time taken to evaluate rule', ['rule_name'])
-        self.prom_alerts_sent = prometheus_client.Counter('elastalert_alerts_sent', 'Number of alerts sent for rule', ['rule_name'])
-        self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name'])
+        self.prom_scrapes = prometheus_client.Counter('elastalert_scrapes', 'Number of scrapes for rule', ['rule_name', 'tenant'])
+        self.prom_hits = prometheus_client.Counter('elastalert_hits', 'Number of hits for rule', ['rule_name', 'tenant'])
+        self.prom_matches = prometheus_client.Counter('elastalert_matches', 'Number of matches for rule', ['rule_name', 'tenant'])
+        self.prom_time_taken = prometheus_client.Counter('elastalert_time_taken', 'Time taken to evaluate rule', ['rule_name', 'tenant'])
+        self.prom_alerts_sent = prometheus_client.Counter('elastalert_alerts_sent', 'Number of alerts sent for rule', ['rule_name', 'tenant'])
+        self.prom_alerts_not_sent = prometheus_client.Counter('elastalert_alerts_not_sent', 'Number of alerts not sent', ['rule_name', 'tenant'])
         self.prom_errors = prometheus_client.Counter('elastalert_errors', 'Number of errors for rule')
-        self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name'])
+        self.prom_alerts_silenced = prometheus_client.Counter('elastalert_alerts_silenced', 'Number of silenced alerts', ['rule_name', 'tenant'])
         # Reference to class-level metrics for consistency with self.metricname pattern
         self.elastalert_load_rule_failed_total = PrometheusWrapper.elastalert_load_rule_failed_total
         self.elastalert_exceptions_total = PrometheusWrapper.elastalert_exceptions_total
@@ -50,7 +50,8 @@ class PrometheusWrapper:
     def metrics_run_rule(self, rule, endtime, starttime=None):
         """ Increment counter every time rule is run """
         try:
-            self.prom_scrapes.labels(rule['name']).inc()
+            tenant = self.get_tenant_name_from_rule(rule)
+            self.prom_scrapes.labels(rule['name'], tenant).inc()
         finally:
             return self.run_rule(rule, endtime, starttime)
 
@@ -59,31 +60,29 @@ class PrometheusWrapper:
 
         res = self.writeback(doc_type, body)
         try:
+            tenant = self.get_tenant_name_from_rule(body['rule_name'])
             if doc_type == 'elastalert_status':
-                self.prom_hits.labels(body['rule_name']).inc(int(body['hits']))
-                self.prom_matches.labels(body['rule_name']).inc(int(body['matches']))
-                self.prom_time_taken.labels(body['rule_name']).inc(float(body['time_taken']))
+                self.prom_hits.labels(body['rule_name'], tenant).inc(int(body['hits']))
+                self.prom_matches.labels(body['rule_name'], tenant).inc(int(body['matches']))
+                self.prom_time_taken.labels(body['rule_name'], tenant).inc(float(body['time_taken']))
             elif doc_type == 'elastalert':
                 if body['alert_sent']:
-                    self.prom_alerts_sent.labels(body['rule_name']).inc()
+                    self.prom_alerts_sent.labels(body['rule_name','tenant']).inc()
                 else:
-                    self.prom_alerts_not_sent.labels(body['rule_name']).inc()
+                    self.prom_alerts_not_sent.labels(body['rule_name'], tenant).inc()
             elif doc_type == 'elastalert_error':
                 self.prom_errors.inc()
             elif doc_type == 'silence':
-                self.prom_alerts_silenced.labels(body['rule_name']).inc()
+                self.prom_alerts_silenced.labels(body['rule_name'], tenant).inc()
         finally:
             return res
 
     def metrics_handle_uncaught_exception(self, exception, rule):
         """ Increment counter every time rule is run """
         try:
-            rule_name = rule.get('name') or 'unknown'
-            tenant = "unknown"
-            if rule_name != 'unknown' and '_' in rule_name:
-                tenant = rule_name.split('_')[0]
+            tenant = self.get_tenant_name_from_rule(rule)
             error_type = exception.__class__.__name__
-            self.elastalert_unhandled_exceptions_total.labels(rule=rule_name, tenant=tenant, error_type=error_type).inc()
+            self.elastalert_unhandled_exceptions_total.labels(rule=rule.get('name') or 'unknown', tenant=tenant, error_type=error_type).inc()
         finally:
             return self.handle_uncaught_exception(exception, rule)
 
@@ -109,3 +108,15 @@ class PrometheusWrapper:
     def increment_elastalert_exceptions_total(cls, error_type):
         """Class method to get the elastalert_exceptions_total metric."""
         cls.elastalert_exceptions_total.labels(error_type=error_type).inc()
+    
+    def get_tenant_name_from_rule(self,rule=None):
+        """Get the tenant name from the rule name."""
+        rule_name = 'unknown'
+        if rule is not None:
+            rule_name = rule.get('name') or 'unknown'
+        
+        tenant = "unknown"
+        if rule_name != 'unknown' and '_' in rule_name:
+            tenant = rule_name.split('_')[0]
+
+        return tenant

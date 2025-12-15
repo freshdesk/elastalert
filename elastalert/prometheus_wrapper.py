@@ -18,6 +18,13 @@ class PrometheusWrapper:
         'Total number of all unhandled exceptions in ElastAlert',
         ['error_type']
     )
+    
+    elastalert_router_response_time = prometheus_client.Histogram(
+        'elastalert_router_response_time_milliseconds',
+        'Router response time in milliseconds',
+        ['rule', 'tenant'],
+        buckets=[10, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 3000, 5000, 10000, 15000, 30000, 60000, 180000]
+    )
 
     def __init__(self, client):
         self.prometheus_port = client.prometheus_port
@@ -43,6 +50,7 @@ class PrometheusWrapper:
         self.elastalert_load_rule_failed_total = PrometheusWrapper.elastalert_load_rule_failed_total
         self.elastalert_exceptions_total = PrometheusWrapper.elastalert_exceptions_total
         self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type'])
+        self.elastalert_router_response_time = PrometheusWrapper.elastalert_router_response_time
 
     def start(self):
         prometheus_client.start_http_server(self.prometheus_port)
@@ -120,4 +128,19 @@ class PrometheusWrapper:
             tenant = rule_name.split('_')[0]
 
         return tenant
+    @classmethod
+    def add_router_response_time(cls, rule_name, response_time):
+        """Class method to record the router response time metric.
         
+            Args:
+            rule_name: Rule name string.
+            response_time: Response time value in milliseconds (float).
+        """
+        if rule_name is None:
+            rule_name = 'unknown'
+        if response_time is None:
+            response_time = 0
+            
+        tenant = cls.get_tenant_name_from_rule(rule_name)
+        # Observe the response time value (in milliseconds)
+        cls.elastalert_router_response_time.labels(rule=rule_name, tenant=tenant).observe(float(response_time))

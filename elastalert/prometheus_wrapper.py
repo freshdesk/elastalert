@@ -141,6 +141,8 @@ class PrometheusWrapper:
         if response_time is None:
             response_time = 0
             
-        tenant = cls.get_tenant_name_from_rule(rule_name)
+        tenant = rule_name.split('_')[0]
+        if tenant is None:
+            tenant = 'unknown'
         # Observe the response time value (in milliseconds)
         cls.elastalert_router_response_time.labels(rule=rule_name, tenant=tenant).observe(float(response_time))

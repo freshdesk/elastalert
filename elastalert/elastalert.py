@@ -471,7 +471,7 @@ class ElastAlerter(object):
             elastalert_logger.error("type: "+str(type(res)))
             elastalert_logger.error("took: "+str(res.get('took')))
             elastalert_logger.error("rule: "+str(rule))
-            elastalert_logger.error("rule type: "+type(rule))
+            elastalert_logger.error("rule type: "+str(type(rule)))
             elastalert_logger.error("########################################################")
             
 

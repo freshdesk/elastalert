@@ -26,6 +26,14 @@ class PrometheusWrapper:
         buckets=[10, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 3000, 5000, 10000, 15000, 30000, 60000, 180000]
     )
 
+
+    elastalert_router_requests_total = prometheus_client.Counter(
+        'elastalert_router_requests_total',
+        'Total number of router requests by status code',
+        ['rule', 'tenant', 'status_code']
+    )
+
+
     def __init__(self, client):
         self.prometheus_port = client.prometheus_port
         self.run_rule = client.run_rule
@@ -51,6 +59,8 @@ class PrometheusWrapper:
         self.elastalert_exceptions_total = PrometheusWrapper.elastalert_exceptions_total
         self.elastalert_unhandled_exceptions_total = prometheus_client.Counter('elastalert_unhandled_exceptions_total','Total number of all unhandled exceptions in ElastAlert',['rule', 'tenant', 'error_type'])
         self.elastalert_router_response_time = PrometheusWrapper.elastalert_router_response_time
+        self.elastalert_router_requests_total = PrometheusWrapper.elastalert_router_requests_total
+        
 
     def start(self):
         prometheus_client.start_http_server(self.prometheus_port)
@@ -146,3 +156,15 @@ class PrometheusWrapper:
             tenant = 'unknown'
         # Observe the response time value (in milliseconds)
         cls.elastalert_router_response_time.labels(rule=rule_name, tenant=tenant).observe(float(response_time))
+
+    @classmethod
+    def increment_router_requests_total(cls, rule_name, status_code):
+        """Class method to increment the router requests total metric."""
+        if rule_name is None:
+            rule_name = 'unknown'
+        if status_code is None:
+            status_code = 'unknown'
+        tenant = rule_name.split('_')[0]
+        if tenant is None:
+            tenant = 'unknown'
+        cls.elastalert_router_requests_total.labels(rule=rule_name, tenant=tenant, status_code=status_code).inc()

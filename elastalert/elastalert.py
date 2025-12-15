@@ -470,7 +470,7 @@ class ElastAlerter(object):
             elastalert_logger.error(dir(res))
             elastalert_logger.error("########################################################")
             PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
-
+            PrometheusWrapper.increment_router_requests_total(rule.get('name'), res.get('status'))
             if span:
                 span.add_event(
                     name="msearch_response",
@@ -618,6 +618,7 @@ class ElastAlerter(object):
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
             PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
+            PrometheusWrapper.increment_router_requests_total(rule.get('name'), res.get('status'))
 
             # Add response to current span as attribute
             if span:
@@ -728,6 +729,7 @@ class ElastAlerter(object):
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
             PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
+            PrometheusWrapper.increment_router_requests_total(rule.get('name'), res.get('status'))
 
             # Add response to current span as attribute
             if span:
@@ -792,6 +794,7 @@ class ElastAlerter(object):
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
             PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
+            PrometheusWrapper.increment_router_requests_total(rule.get('name'), res.get('status'))
         except ElasticsearchException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
@@ -821,6 +824,7 @@ class ElastAlerter(object):
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
             PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
+            PrometheusWrapper.increment_router_requests_total(rule.get('name'), res.get('status'))
         except ElasticsearchException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)

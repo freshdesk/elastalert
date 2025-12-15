@@ -465,7 +465,19 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+
+            elastalert_logger.error("########################################################")
+            elastalert_logger.error("response: "+str(res))
+            elastalert_logger.error("type: "+str(type(res)))
+            elastalert_logger.error("took: "+str(res.get('took')))
+            elastalert_logger.error("rule: "+str(rule))
+            elastalert_logger.error("rule type: "+type(rule))
+            elastalert_logger.error("########################################################")
             
+
+
+            # PrometheusWrapper.add_router_response_time(rule, res.get('took'))
+
             if span:
                 span.add_event(
                     name="msearch_response",

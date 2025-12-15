@@ -465,7 +465,6 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
-
             PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
 
             if span:
@@ -614,6 +613,7 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+            PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
 
             # Add response to current span as attribute
             if span:
@@ -723,6 +723,7 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+            PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
 
             # Add response to current span as attribute
             if span:
@@ -786,6 +787,7 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+            PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
         except ElasticsearchException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)
@@ -814,6 +816,7 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+            PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
         except ElasticsearchException as e:
             if len(str(e)) > 1024:
                 e = str(e)[:1024] + '... (%d characters removed)' % (len(str(e)) - 1024)

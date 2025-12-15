@@ -465,6 +465,10 @@ class ElastAlerter(object):
             #using backwards compatibile msearch
             res = self.thread_data.current_es.msearch(body=request)
             res = res['responses'][0]
+            elastalert_logger.error("########################################################")
+            elastalert_logger.error(res)
+            elastalert_logger.error(dir(res))
+            elastalert_logger.error("########################################################")
             PrometheusWrapper.add_router_response_time(rule.get('name'), res.get('took'))
 
             if span:
@@ -2572,5 +2576,4 @@ def main(args=None):
     
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
-    
     

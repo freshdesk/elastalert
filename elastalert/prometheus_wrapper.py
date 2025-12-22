@@ -78,7 +78,8 @@ class PrometheusWrapper:
 
         res = self.writeback(doc_type, body)
         try:
-            tenant = self.get_tenant_name_from_rule(body['rule_name'])
+            tenant = body['rule_name'].split('_')[0]
+            
             if doc_type == 'elastalert_status':
                 self.prom_hits.labels(body['rule_name'], tenant).inc(int(body['hits']))
                 self.prom_matches.labels(body['rule_name'], tenant).inc(int(body['matches']))

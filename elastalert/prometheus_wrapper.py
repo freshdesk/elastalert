@@ -86,7 +86,7 @@ class PrometheusWrapper:
                 self.prom_time_taken.labels(body['rule_name'], tenant).inc(float(body['time_taken']))
             elif doc_type == 'elastalert':
                 if body['alert_sent']:
-                    self.prom_alerts_sent.labels(body['rule_name','tenant']).inc()
+                    self.prom_alerts_sent.labels(body['rule_name',tenant]).inc()
                 else:
                     self.prom_alerts_not_sent.labels(body['rule_name'], tenant).inc()
             elif doc_type == 'elastalert_error':

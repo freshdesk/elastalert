@@ -356,9 +356,9 @@ class StageDurationRule(FunnelAPIRuleType):
     def _check_threshold(self, rule, data):
         p95 = data.get('p95_latency_ms', 0.0)
         if self._operator_check(p95, rule):
-            sid = data.get('stage_id')
             payload = rule.get('query_payload', {})
-            stage = _lookup_stage(payload, sid)
+            sid = data.get('stage_id')
+            stage = _lookup_stage(payload, sid) if sid is not None else next(iter(payload.values()), {})
             self.add_match({
                 'alert_type':        'stage_duration',
                 'pipeline_name':     rule.get('pipeline_name', rule['name']),
@@ -391,9 +391,9 @@ class StageExceptionRateRule(FunnelAPIRuleType):
     def _check_threshold(self, rule, data):
         rate = data.get('exception_rate', 0.0)
         if self._operator_check(rate, rule):
-            sid = data.get('stage_id')
             payload = rule.get('query_payload', {})
-            stage = _lookup_stage(payload, sid)
+            sid = data.get('stage_id')
+            stage = _lookup_stage(payload, sid) if sid is not None else next(iter(payload.values()), {})
             self.add_match({
                 'alert_type':        'exception_rate',
                 'pipeline_name':     rule.get('pipeline_name', rule['name']),

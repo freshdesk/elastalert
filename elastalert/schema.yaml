@@ -271,6 +271,7 @@ properties:
   timeFrame: {type: integer}
   timeBuffer: {type: integer}
   tenant: {type: string}
+  pipeline_name: {type: string}
   query_payload: {type: object}
   time_buffer_minutes: {type: integer}
   name: {type: string}

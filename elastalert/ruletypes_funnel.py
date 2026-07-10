@@ -27,6 +27,23 @@ def _fmt_ts(dt):
     return dt.strftime('%Y-%m-%dT%H:%M:%S.') + '%03d' % (dt.microsecond // 1000) + 'Z'
 
 
+def _lookup_stage(payload, sid):
+    """Find a stage in query_payload by stage_id from the API response.
+
+    The router may return a short integer id (e.g. 2) while the payload key is
+    'stage_id<originalId>' (e.g. 'stage_id2002'). Try exact match first, then
+    fall back to any key whose suffix matches str(sid).
+    """
+    sid_str = str(sid)
+    exact = payload.get('stage_id%s' % sid_str)
+    if exact is not None:
+        return exact
+    for k, v in payload.items():
+        if k == sid_str or k.endswith(sid_str):
+            return v
+    return {}
+
+
 def _stage_detail(stage):
     """Build a display dict for one query_payload stage entry.
 
@@ -150,11 +167,10 @@ class FunnelAPIRuleType(RuleType):
         annotations = rule.get('alertmanager_annotations', {})
         osd_template = annotations.get('osd_link', '')
         if osd_template:
-            pipeline_id = rule.get('alertmanager_labels', {}).get('pipeline_uuid', '')
-            annotations['osd_link'] = (osd_template
-                                       .replace('{pipeline_id}', pipeline_id)
-                                       .replace('{from}', link_from)
-                                       .replace('{to}', link_to))
+            resolved = osd_template.replace('{from}', link_from).replace('{to}', link_to)
+            for k, v in rule.get('alertmanager_labels', {}).items():
+                resolved = resolved.replace('{%s}' % k, str(v))
+            annotations['osd_link'] = resolved
 
         for match in self.matches[matches_before:]:
             match['query_start_time'] = _fmt_ts(start_time)
@@ -206,7 +222,7 @@ class PipelineConversionRateRule(FunnelAPIRuleType):
                 if not self._operator_check(rate, rule):
                     continue
                 sid = leaf.get('stage_id', '?')
-                stage = payload.get('stage_id%s' % sid, {})
+                stage = _lookup_stage(payload, sid)
                 detail = _stage_detail(stage)
                 detail['conversion_rate'] = rate
                 leaf_rates.append(detail)
@@ -342,7 +358,7 @@ class StageDurationRule(FunnelAPIRuleType):
         if self._operator_check(p95, rule):
             sid = data.get('stage_id')
             payload = rule.get('query_payload', {})
-            stage = payload.get('stage_id%s' % sid) or next(iter(payload.values()), {})
+            stage = _lookup_stage(payload, sid)
             self.add_match({
                 'alert_type':        'stage_duration',
                 'pipeline_name':     rule.get('pipeline_name', rule['name']),
@@ -377,7 +393,7 @@ class StageExceptionRateRule(FunnelAPIRuleType):
         if self._operator_check(rate, rule):
             sid = data.get('stage_id')
             payload = rule.get('query_payload', {})
-            stage = payload.get('stage_id%s' % sid) or next(iter(payload.values()), {})
+            stage = _lookup_stage(payload, sid)
             self.add_match({
                 'alert_type':        'exception_rate',
                 'pipeline_name':     rule.get('pipeline_name', rule['name']),

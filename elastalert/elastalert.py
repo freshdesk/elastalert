@@ -1435,10 +1435,10 @@ class ElastAlerter(object):
             # which handles restart resume via elastalert_status exactly like ES rules.
             rule['type'].run_api_check(rule, endtime)
             # Override original_starttime so the Ran log and elastalert_status reflect
-            # the actual funnel query window (lookback_minutes + query_duration) instead
+            # the actual funnel query window (timeBuffer + timeFrame) instead
             # of elastalert's internal bookmark window.
-            lookback = datetime.timedelta(minutes=rule.get('lookback_minutes', 0))
-            funnel_start = endtime - lookback - datetime.timedelta(minutes=rule['query_duration'])
+            lookback = datetime.timedelta(minutes=rule.get('timeBuffer', 0))
+            funnel_start = endtime - lookback - datetime.timedelta(minutes=rule['timeFrame'])
             rule['original_starttime'] = funnel_start
         else:
             # Run the rule. If querying over a large time period, split it up into segments

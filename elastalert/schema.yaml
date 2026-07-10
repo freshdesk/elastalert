@@ -226,32 +226,32 @@ oneOf:
       type: {enum: [advanced_query]}
 
   - title: Pipeline Conversion Rate
-    required: [funnel_api_url, query_payload, threshold, query_duration, lookback_minutes]
+    required: [funnel_api_url, query_payload, threshold, timeFrame, timeBuffer]
     properties:
       type: {enum: [pipeline_conversion_rate]}
 
   - title: Branch Conversion Rate
-    required: [funnel_api_url, query_payload, threshold, query_duration, lookback_minutes]
+    required: [funnel_api_url, query_payload, threshold, timeFrame, timeBuffer]
     properties:
       type: {enum: [branch_conversion_rate]}
 
   - title: Pipeline Duration
-    required: [funnel_api_url, query_payload, threshold, query_duration, lookback_minutes]
+    required: [funnel_api_url, query_payload, threshold, timeFrame, timeBuffer]
     properties:
       type: {enum: [pipeline_duration]}
 
   - title: Branch Duration
-    required: [funnel_api_url, query_payload, threshold, query_duration, lookback_minutes]
+    required: [funnel_api_url, query_payload, threshold, timeFrame, timeBuffer]
     properties:
       type: {enum: [branch_duration]}
 
   - title: Stage Duration
-    required: [funnel_api_url, query_payload, threshold, query_duration]
+    required: [funnel_api_url, query_payload, threshold, timeFrame]
     properties:
       type: {enum: [stage_duration]}
 
   - title: Stage Exception Rate
-    required: [funnel_api_url, query_payload, threshold, query_duration]
+    required: [funnel_api_url, query_payload, threshold, timeFrame]
     properties:
       type: {enum: [stage_exception_rate]}
 
@@ -267,8 +267,9 @@ properties:
   funnel_api_url: {type: string}
   funnel_api_timeout: {type: integer}
   threshold: {type: number}
-  query_duration: {type: integer}
-  lookback_minutes: {type: integer}
+  threshold_operator: {type: string, enum: [GREATER_THAN, LESS_THAN, GREATER_OR_EQUAL, LESS_OR_EQUAL]}
+  timeFrame: {type: integer}
+  timeBuffer: {type: integer}
   query_payload: {type: object}
   time_buffer_minutes: {type: integer}
   name: {type: string}

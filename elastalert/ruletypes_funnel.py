@@ -6,6 +6,13 @@ from elastalert.ruletypes import RuleType
 
 # Pipeline/branch alerts use a lookback offset: root stage window ends at t1-lookback,
 # other stages end at t1. Stage alerts use no offset.
+_OP_SYMBOL = {
+    'GREATER_THAN':    '>',
+    'LESS_THAN':       '<',
+    'GREATER_OR_EQUAL': '>=',
+    'LESS_OR_EQUAL':   '<=',
+}
+
 _PIPELINE_BRANCH_TEMPLATES = frozenset([
     'pipeline_conversion_rate',
     'branch_conversion_rate',
@@ -28,11 +35,11 @@ class FunnelAPIRuleType(RuleType):
         funnel_api_url:   http://haystack-router:8080
         query_payload:    {stage_id1: {...}, stage_id2: {...}, ...}
         threshold:        <number>   (% for conversion/exception, ms for duration)
-        query_duration:   <int>      minutes — width of the query window
+        timeFrame:        <int>      minutes — width of the query window
         index:            funnel     (required by loader schema but unused)
 
     Pipeline/branch rules additionally require:
-        lookback_minutes: <int>  minutes — root stage window ends this far before t1;
+        timeBuffer:       <int>  minutes — root stage window ends this far before t1;
                                  other stages still extend to t1.
     """
 
@@ -40,7 +47,7 @@ class FunnelAPIRuleType(RuleType):
         'funnel_api_url',
         'query_payload',
         'threshold',
-        'query_duration',
+        'timeFrame',
     ])
 
     # Subclasses declare the template name sent to the alert endpoint.
@@ -57,15 +64,15 @@ class FunnelAPIRuleType(RuleType):
         Timestamps are computed here so the router receives explicit ISO bounds
         rather than computing from now() independently.
         """
-        duration = datetime.timedelta(minutes=rule['query_duration'])
+        duration = datetime.timedelta(minutes=rule['timeFrame'])
 
         if self.alert_template in _PIPELINE_BRANCH_TEMPLATES:
-            lookback = datetime.timedelta(minutes=rule['lookback_minutes'])
-            # Root stage: [t1 - lookback - duration, t1 - lookback]
-            # Other stages: [t1 - lookback - duration, t1]
+            lookback = datetime.timedelta(minutes=rule['timeBuffer'])
+            # Root stage: [t1 - timeBuffer - timeFrame, t1 - timeBuffer]
+            # Other stages: [t1 - timeBuffer - timeFrame, t1]
             start_time = endtime - lookback - duration
             end_time = endtime
-            time_buffer_minutes = rule['lookback_minutes']
+            time_buffer_minutes = rule['timeBuffer']
         else:
             # Stage alerts: flat window [t1 - duration, t1], no offset.
             start_time = endtime - duration
@@ -96,15 +103,27 @@ class FunnelAPIRuleType(RuleType):
 
         self._check_threshold(rule, resp.json())
 
+    def _operator_check(self, value, rule):
+        """Return True if value breaches the threshold using threshold_operator.
+
+        Supported values: GREATER_THAN, LESS_THAN, GREATER_OR_EQUAL, LESS_OR_EQUAL.
+        Defaults to GREATER_THAN when threshold_operator is absent.
+        """
+        op = rule.get('threshold_operator', 'GREATER_THAN').upper()
+        t = rule['threshold']
+        if op == 'LESS_THAN':
+            return value < t
+        if op == 'LESS_OR_EQUAL':
+            return value <= t
+        if op == 'GREATER_OR_EQUAL':
+            return value >= t
+        return value > t  # GREATER_THAN (default)
+
     def _check_threshold(self, rule, data):
         raise NotImplementedError
 
-    def get_match_str(self, match):
-        lines = ['Alert type: %s' % match.get('alert_type', self.alert_template)]
-        for key, val in match.items():
-            if key not in ('alert_type', 'num_hits', 'num_matches'):
-                lines.append('  %s: %s' % (key, val))
-        return '\n'.join(lines)
+    def _op_str(self, match):
+        return _OP_SYMBOL.get(match.get('threshold_operator', 'GREATER_THAN'), '>')
 
 
 class PipelineConversionRateRule(FunnelAPIRuleType):
@@ -115,17 +134,28 @@ class PipelineConversionRateRule(FunnelAPIRuleType):
     """
 
     alert_template = 'pipeline_conversion_rate'
-    required_options = FunnelAPIRuleType.required_options | frozenset(['lookback_minutes'])
+    required_options = FunnelAPIRuleType.required_options | frozenset(['timeBuffer'])
 
     def _check_threshold(self, rule, data):
         min_rate = data.get('min_conversion_rate', 100.0)
-        if min_rate < rule['threshold']:
+        if self._operator_check(min_rate, rule):
             self.add_match({
                 'alert_type': 'pipeline_conversion_rate',
                 'min_conversion_rate': min_rate,
                 'threshold': rule['threshold'],
+                'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
                 'leaf_conversion_rates': data.get('leaf_conversion_rates', []),
             })
+
+    def get_match_str(self, match):
+        op = self._op_str(match)
+        lines = [
+            'Pipeline conversion rate %.2f%% is %s threshold %.2f%%' % (
+                match['min_conversion_rate'], op, match['threshold']),
+        ]
+        for leaf in match.get('leaf_conversion_rates', []):
+            lines.append('  %s: %.2f%%' % (leaf.get('stage_id', '?'), leaf.get('conversion_rate', 0)))
+        return '\n'.join(lines)
 
 
 class BranchConversionRateRule(FunnelAPIRuleType):
@@ -136,16 +166,22 @@ class BranchConversionRateRule(FunnelAPIRuleType):
     """
 
     alert_template = 'branch_conversion_rate'
-    required_options = FunnelAPIRuleType.required_options | frozenset(['lookback_minutes'])
+    required_options = FunnelAPIRuleType.required_options | frozenset(['timeBuffer'])
 
     def _check_threshold(self, rule, data):
         rate = data.get('conversion_rate', 100.0)
-        if rate < rule['threshold']:
+        if self._operator_check(rate, rule):
             self.add_match({
                 'alert_type': 'branch_conversion_rate',
                 'conversion_rate': rate,
                 'threshold': rule['threshold'],
+                'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
             })
+
+    def get_match_str(self, match):
+        op = self._op_str(match)
+        return 'Branch conversion rate %.2f%% is %s threshold %.2f%%' % (
+            match['conversion_rate'], op, match['threshold'])
 
 
 class PipelineDurationRule(FunnelAPIRuleType):
@@ -156,16 +192,22 @@ class PipelineDurationRule(FunnelAPIRuleType):
     """
 
     alert_template = 'pipeline_duration'
-    required_options = FunnelAPIRuleType.required_options | frozenset(['lookback_minutes'])
+    required_options = FunnelAPIRuleType.required_options | frozenset(['timeBuffer'])
 
     def _check_threshold(self, rule, data):
         p95 = data.get('p95_e2e_latency_ms', 0.0)
-        if p95 > rule['threshold']:
+        if self._operator_check(p95, rule):
             self.add_match({
                 'alert_type': 'pipeline_duration',
                 'p95_e2e_latency_ms': p95,
                 'threshold': rule['threshold'],
+                'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
             })
+
+    def get_match_str(self, match):
+        op = self._op_str(match)
+        return 'Pipeline p95 e2e latency %.1fms is %s threshold %.1fms' % (
+            match['p95_e2e_latency_ms'], op, match['threshold'])
 
 
 class BranchDurationRule(FunnelAPIRuleType):
@@ -175,16 +217,22 @@ class BranchDurationRule(FunnelAPIRuleType):
     """
 
     alert_template = 'branch_duration'
-    required_options = FunnelAPIRuleType.required_options | frozenset(['lookback_minutes'])
+    required_options = FunnelAPIRuleType.required_options | frozenset(['timeBuffer'])
 
     def _check_threshold(self, rule, data):
         p95 = data.get('p95_e2e_latency_ms', 0.0)
-        if p95 > rule['threshold']:
+        if self._operator_check(p95, rule):
             self.add_match({
                 'alert_type': 'branch_duration',
                 'p95_e2e_latency_ms': p95,
                 'threshold': rule['threshold'],
+                'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
             })
+
+    def get_match_str(self, match):
+        op = self._op_str(match)
+        return 'Branch p95 e2e latency %.1fms is %s threshold %.1fms' % (
+            match['p95_e2e_latency_ms'], op, match['threshold'])
 
 
 class StageDurationRule(FunnelAPIRuleType):
@@ -192,34 +240,40 @@ class StageDurationRule(FunnelAPIRuleType):
 
     query_payload should define exactly one stage.
     Duration is the span's own duration — not end-to-end from root.
-    No lookback offset: window is [t1 - query_duration, t1].
+    No timeBuffer offset: window is [t1 - timeFrame, t1].
     """
 
     alert_template = 'stage_duration'
 
     def _check_threshold(self, rule, data):
         p95 = data.get('p95_latency_ms', 0.0)
-        if p95 > rule['threshold']:
+        if self._operator_check(p95, rule):
             self.add_match({
                 'alert_type': 'stage_duration',
                 'stage_id': data.get('stage_id'),
                 'p95_latency_ms': p95,
                 'threshold': rule['threshold'],
+                'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
             })
+
+    def get_match_str(self, match):
+        op = self._op_str(match)
+        return 'Stage p95 latency %.1fms is %s threshold %.1fms' % (
+            match['p95_latency_ms'], op, match['threshold'])
 
 
 class StageExceptionRateRule(FunnelAPIRuleType):
     """Alert when the exception rate (error_count / span_count * 100) of a stage exceeds threshold (%).
 
     query_payload should define exactly one stage.
-    No lookback offset: window is [t1 - query_duration, t1].
+    No timeBuffer offset: window is [t1 - timeFrame, t1].
     """
 
     alert_template = 'exception_rate'
 
     def _check_threshold(self, rule, data):
         rate = data.get('exception_rate', 0.0)
-        if rate > rule['threshold']:
+        if self._operator_check(rate, rule):
             self.add_match({
                 'alert_type': 'exception_rate',
                 'stage_id': data.get('stage_id'),
@@ -227,4 +281,11 @@ class StageExceptionRateRule(FunnelAPIRuleType):
                 'error_count': data.get('error_count'),
                 'span_count': data.get('span_count'),
                 'threshold': rule['threshold'],
+                'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
             })
+
+    def get_match_str(self, match):
+        op = self._op_str(match)
+        return 'Stage exception rate %.2f%% is %s threshold %.2f%% (errors: %s / spans: %s)' % (
+            match['exception_rate'], op, match['threshold'],
+            match.get('error_count', '?'), match.get('span_count', '?'))

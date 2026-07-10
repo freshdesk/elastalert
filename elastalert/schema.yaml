@@ -270,6 +270,7 @@ properties:
   threshold_operator: {type: string, enum: [GREATER_THAN, LESS_THAN, GREATER_OR_EQUAL, LESS_OR_EQUAL]}
   timeFrame: {type: integer}
   timeBuffer: {type: integer}
+  tenant: {type: string}
   query_payload: {type: object}
   time_buffer_minutes: {type: integer}
   name: {type: string}

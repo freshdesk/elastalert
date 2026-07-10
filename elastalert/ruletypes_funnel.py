@@ -335,7 +335,8 @@ class StageDurationRule(FunnelAPIRuleType):
         p95 = data.get('p95_latency_ms', 0.0)
         if self._operator_check(p95, rule):
             sid = data.get('stage_id')
-            stage = rule.get('query_payload', {}).get(sid, {})
+            payload = rule.get('query_payload', {})
+            stage = payload.get('stage_id%s' % sid) or next(iter(payload.values()), {})
             detail = _stage_detail(stage)
             self.add_match({
                 'alert_type':        'stage_duration',
@@ -371,7 +372,8 @@ class StageExceptionRateRule(FunnelAPIRuleType):
         rate = data.get('exception_rate', 0.0)
         if self._operator_check(rate, rule):
             sid = data.get('stage_id')
-            stage = rule.get('query_payload', {}).get(sid, {})
+            payload = rule.get('query_payload', {})
+            stage = payload.get('stage_id%s' % sid) or next(iter(payload.values()), {})
             detail = _stage_detail(stage)
             self.add_match({
                 'alert_type':        'exception_rate',

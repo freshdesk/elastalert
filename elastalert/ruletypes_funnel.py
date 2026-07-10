@@ -147,16 +147,14 @@ class FunnelAPIRuleType(RuleType):
         link_from = _fmt_ts(start_time)
         link_to = _fmt_ts(root_end_time) if root_end_time is not None else _fmt_ts(end_time)
 
-        labels = rule.get('alertmanager_labels', {})
-        osd_template = labels.get('osd_link', '')
+        annotations = rule.get('alertmanager_annotations', {})
+        osd_template = annotations.get('osd_link', '')
         if osd_template:
-            pipeline_id = labels.get('pipeline_uuid', '')
-            resolved_link = (osd_template
-                             .replace('{pipeline_id}', pipeline_id)
-                             .replace('{from}', link_from)
-                             .replace('{to}', link_to))
-        else:
-            resolved_link = None
+            pipeline_id = rule.get('alertmanager_labels', {}).get('pipeline_uuid', '')
+            annotations['osd_link'] = (osd_template
+                                       .replace('{pipeline_id}', pipeline_id)
+                                       .replace('{from}', link_from)
+                                       .replace('{to}', link_to))
 
         for match in self.matches[matches_before:]:
             match['query_start_time'] = _fmt_ts(start_time)
@@ -164,8 +162,6 @@ class FunnelAPIRuleType(RuleType):
             if root_end_time is not None:
                 match['root_start_time'] = _fmt_ts(start_time)
                 match['root_end_time'] = _fmt_ts(root_end_time)
-            if resolved_link is not None:
-                match['osd_link'] = resolved_link
 
     def _operator_check(self, value, rule):
         """Return True if value breaches the threshold using threshold_operator.

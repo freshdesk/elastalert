@@ -13,6 +13,7 @@ from jinja2 import FileSystemLoader
 from jinja2 import Template
 
 import elastalert.alerters.alerta
+from elastalert import ruletypes_funnel
 import elastalert.alerters.chatwork
 import elastalert.alerters.command
 import elastalert.alerters.datadog
@@ -95,7 +96,13 @@ class RulesLoader(object):
         'percentage_match': ruletypes.PercentageMatchRule,
         'spike_aggregation': ruletypes.SpikeMetricAggregationRule,
         'error_rate': ruletypes.ErrorRateRule,  #Adding Error Rate Rule type
-        'advanced_query': ruletypes.AdvancedQueryRule
+        'advanced_query': ruletypes.AdvancedQueryRule,
+        'pipeline_conversion_rate': ruletypes_funnel.PipelineConversionRateRule,
+        'branch_conversion_rate': ruletypes_funnel.BranchConversionRateRule,
+        'pipeline_duration': ruletypes_funnel.PipelineDurationRule,
+        'branch_duration': ruletypes_funnel.BranchDurationRule,
+        'stage_duration': ruletypes_funnel.StageDurationRule,
+        'stage_exception_rate': ruletypes_funnel.StageExceptionRateRule,
     }
 
     # Used to map names of alerts to their classes

@@ -32,6 +32,7 @@ from elasticsearch.exceptions import TransportError
 from elastalert.ruletypes import AdvancedQueryRule
 from elastalert.ruletypes import ErrorRateRule, NewTermsRule
 from elastalert.ruletypes import PercentageMatchRule
+from elastalert.ruletypes_funnel import FunnelAPIRuleType
 
 from elastalert.alerters.debug import DebugAlerter
 from elastalert.config import load_conf
@@ -1398,8 +1399,9 @@ class ElastAlerter(object):
             if rule.get('tenant'):
                 root_span.set_attribute("rule.tenant", str(rule['tenant']))
         
-        self.thread_data.current_es = kibana_adapter_client(rule)
-        self.current_es_addr = (rule['es_host'], rule['es_port'])
+        if not isinstance(rule['type'], FunnelAPIRuleType):
+            self.thread_data.current_es = kibana_adapter_client(rule)
+            self.current_es_addr = (rule['es_host'], rule['es_port'])
 
         # If there are pending aggregate matches, try processing them
         for x in range(len(rule['agg_matches'])):
@@ -1421,44 +1423,56 @@ class ElastAlerter(object):
         # Add actual starttime to span after it's been computed
         if root_span and root_span.is_recording():
             root_span.set_attribute("query.starttime_actual", str(rule['starttime']))
-            
+
         # Don't run if starttime was set to the future
         if ts_now() <= rule['starttime']:
             elastalert_logger.warning("Attempted to use query start time in the future (%s), sleeping instead" % (starttime))
             return 0
 
-        # Run the rule. If querying over a large time period, split it up into segments
-        segment_size = self.get_segment_size(rule)
-        
-        if root_span and root_span.is_recording():
-            root_span.set_attribute("query.segment_size", str(segment_size))
+        if isinstance(rule['type'], FunnelAPIRuleType):
+            # Replace ES query with a single haystack-router API call.
+            # starttime/original_starttime are already set by set_starttime() above,
+            # which handles restart resume via elastalert_status exactly like ES rules.
+            rule['type'].run_api_check(rule, endtime)
+            # Override original_starttime so the Ran log and elastalert_status reflect
+            # the actual funnel query window (timeBuffer + timeFrame) instead
+            # of elastalert's internal bookmark window.
+            lookback = datetime.timedelta(minutes=rule.get('timeBuffer', 0))
+            funnel_start = endtime - lookback - datetime.timedelta(minutes=rule['timeFrame'])
+            rule['original_starttime'] = funnel_start
+        else:
+            # Run the rule. If querying over a large time period, split it up into segments
+            segment_size = self.get_segment_size(rule)
 
-        tmp_endtime = rule['starttime']
+            if root_span and root_span.is_recording():
+                root_span.set_attribute("query.segment_size", str(segment_size))
 
-        while endtime - rule['starttime'] > segment_size:
-            tmp_endtime = tmp_endtime + segment_size
-            if not self.run_query(rule, rule['starttime'], tmp_endtime):
-                return 0
-            self.thread_data.cumulative_hits += self.thread_data.num_hits
-            self.thread_data.num_hits = 0
-            rule['starttime'] = tmp_endtime
-            rule['type'].garbage_collect(tmp_endtime)
+            tmp_endtime = rule['starttime']
 
-        if rule.get('aggregation_query_element'):
-            if endtime - tmp_endtime == segment_size:
-                if not self.run_query(rule, tmp_endtime, endtime):
+            while endtime - rule['starttime'] > segment_size:
+                tmp_endtime = tmp_endtime + segment_size
+                if not self.run_query(rule, rule['starttime'], tmp_endtime):
                     return 0
                 self.thread_data.cumulative_hits += self.thread_data.num_hits
-            elif total_seconds(rule['original_starttime'] - tmp_endtime) == 0:
-                rule['starttime'] = rule['original_starttime']
-                return 0
+                self.thread_data.num_hits = 0
+                rule['starttime'] = tmp_endtime
+                rule['type'].garbage_collect(tmp_endtime)
+
+            if rule.get('aggregation_query_element'):
+                if endtime - tmp_endtime == segment_size:
+                    if not self.run_query(rule, tmp_endtime, endtime):
+                        return 0
+                    self.thread_data.cumulative_hits += self.thread_data.num_hits
+                elif total_seconds(rule['original_starttime'] - tmp_endtime) == 0:
+                    rule['starttime'] = rule['original_starttime']
+                    return 0
+                else:
+                    endtime = tmp_endtime
             else:
-                endtime = tmp_endtime
-        else:
-            if not self.run_query(rule, rule['starttime'], endtime):
-                return 0
-            self.thread_data.cumulative_hits += self.thread_data.num_hits
-            rule['type'].garbage_collect(endtime)
+                if not self.run_query(rule, rule['starttime'], endtime):
+                    return 0
+                self.thread_data.cumulative_hits += self.thread_data.num_hits
+                rule['type'].garbage_collect(endtime)
 
         # Process any new matches
         num_matches = len(rule['type'].matches)

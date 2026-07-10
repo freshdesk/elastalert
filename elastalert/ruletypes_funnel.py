@@ -142,14 +142,30 @@ class FunnelAPIRuleType(RuleType):
 
         matches_before = len(self.matches)
         self._check_threshold(rule, resp.json())
-        # Inject query window into every match this check produced so
-        # get_match_str() and alertmanager annotations can reference them.
+
+        # For pipeline/branch types the OSD link uses the root window; stage types use the full window.
+        link_from = _fmt_ts(start_time)
+        link_to = _fmt_ts(root_end_time) if root_end_time is not None else _fmt_ts(end_time)
+
+        labels = rule.get('alertmanager_labels', {})
+        osd_template = labels.get('osd_link', '')
+        if osd_template:
+            pipeline_id = labels.get('pipeline_uuid', '')
+            resolved_link = (osd_template
+                             .replace('{pipeline_id}', pipeline_id)
+                             .replace('{from}', link_from)
+                             .replace('{to}', link_to))
+        else:
+            resolved_link = None
+
         for match in self.matches[matches_before:]:
             match['query_start_time'] = _fmt_ts(start_time)
             match['query_end_time'] = _fmt_ts(end_time)
             if root_end_time is not None:
                 match['root_start_time'] = _fmt_ts(start_time)
                 match['root_end_time'] = _fmt_ts(root_end_time)
+            if resolved_link is not None:
+                match['osd_link'] = resolved_link
 
     def _operator_check(self, value, rule):
         """Return True if value breaches the threshold using threshold_operator.
@@ -190,11 +206,13 @@ class PipelineConversionRateRule(FunnelAPIRuleType):
             payload = rule.get('query_payload', {})
             leaf_rates = []
             for leaf in data.get('leaf_conversion_rates', []):
+                rate = leaf.get('conversion_rate', 0)
+                if not self._operator_check(rate, rule):
+                    continue
                 sid = leaf.get('stage_id', '?')
-                stage = payload.get(sid, {})
+                stage = payload.get('stage_id%s' % sid, {})
                 detail = _stage_detail(stage)
-                detail['stage_id'] = sid
-                detail['conversion_rate'] = leaf.get('conversion_rate', 0)
+                detail['conversion_rate'] = rate
                 leaf_rates.append(detail)
             self.add_match({
                 'alert_type':           'pipeline_conversion_rate',
@@ -265,15 +283,12 @@ class PipelineDurationRule(FunnelAPIRuleType):
     def _check_threshold(self, rule, data):
         p95 = data.get('p95_e2e_latency_ms', 0.0)
         if self._operator_check(p95, rule):
-            payload = rule.get('query_payload', {})
-            stages = [_stage_detail(s) for s in payload.values()]
             self.add_match({
                 'alert_type':        'pipeline_duration',
                 'pipeline_name':     rule.get('pipeline_name', rule['name']),
                 'p95_e2e_latency_ms': p95,
                 'threshold':         rule['threshold'],
                 'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
-                'stages':            stages,
             })
 
     def get_match_str(self, match):
@@ -282,7 +297,6 @@ class PipelineDurationRule(FunnelAPIRuleType):
             'pipeline':          match.get('pipeline_name', '?'),
             'p95_e2e_latency_ms': match.get('p95_e2e_latency_ms'),
             'threshold':         '%s %s' % (self._op_str(match), match.get('threshold')),
-            'stages':            match.get('stages', []),
             'query_window':      _query_window(match),
         }, indent=2)
 
@@ -299,15 +313,12 @@ class BranchDurationRule(FunnelAPIRuleType):
     def _check_threshold(self, rule, data):
         p95 = data.get('p95_e2e_latency_ms', 0.0)
         if self._operator_check(p95, rule):
-            payload = rule.get('query_payload', {})
-            stages = [_stage_detail(s) for s in payload.values()]
             self.add_match({
                 'alert_type':        'branch_duration',
                 'pipeline_name':     rule.get('pipeline_name', rule['name']),
                 'p95_e2e_latency_ms': p95,
                 'threshold':         rule['threshold'],
                 'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
-                'stages':            stages,
             })
 
     def get_match_str(self, match):
@@ -316,7 +327,6 @@ class BranchDurationRule(FunnelAPIRuleType):
             'pipeline':          match.get('pipeline_name', '?'),
             'p95_e2e_latency_ms': match.get('p95_e2e_latency_ms'),
             'threshold':         '%s %s' % (self._op_str(match), match.get('threshold')),
-            'stages':            match.get('stages', []),
             'query_window':      _query_window(match),
         }, indent=2)
 
@@ -337,12 +347,10 @@ class StageDurationRule(FunnelAPIRuleType):
             sid = data.get('stage_id')
             payload = rule.get('query_payload', {})
             stage = payload.get('stage_id%s' % sid) or next(iter(payload.values()), {})
-            detail = _stage_detail(stage)
             self.add_match({
                 'alert_type':        'stage_duration',
                 'pipeline_name':     rule.get('pipeline_name', rule['name']),
-                'stage_id':          sid,
-                'stage':             detail,
+                'stage':             _stage_detail(stage),
                 'p95_latency_ms':    p95,
                 'threshold':         rule['threshold'],
                 'threshold_operator': rule.get('threshold_operator', 'GREATER_THAN'),
@@ -374,12 +382,10 @@ class StageExceptionRateRule(FunnelAPIRuleType):
             sid = data.get('stage_id')
             payload = rule.get('query_payload', {})
             stage = payload.get('stage_id%s' % sid) or next(iter(payload.values()), {})
-            detail = _stage_detail(stage)
             self.add_match({
                 'alert_type':        'exception_rate',
                 'pipeline_name':     rule.get('pipeline_name', rule['name']),
-                'stage_id':          sid,
-                'stage':             detail,
+                'stage':             _stage_detail(stage),
                 'exception_rate':    rate,
                 'error_count':       data.get('error_count'),
                 'span_count':        data.get('span_count'),
